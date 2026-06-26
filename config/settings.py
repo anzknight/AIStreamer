@@ -43,6 +43,10 @@ class Settings:
     TWITCH_ENABLED: bool = os.getenv("TWITCH_ENABLED", "false").lower() == "true"
     TWITCH_TOKEN: str = os.getenv("TWITCH_TOKEN", "")
     TWITCH_CHANNEL: str = os.getenv("TWITCH_CHANNEL", "")
+    TWITCH_CLIENT_ID: str = os.getenv("TWITCH_CLIENT_ID", "")
+
+    # YouTube Controller
+    YOUTUBE_CONTROLLER_ENABLED: bool = os.getenv("YOUTUBE_CONTROLLER_ENABLED", "false").lower() == "true"
 
     # Streaming mode
     MODE: str = os.getenv("AITUBER_MODE", "chat")  # chat | game | stream

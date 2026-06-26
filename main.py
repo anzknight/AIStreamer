@@ -2,13 +2,29 @@
 AITuber - AIVTuber streaming bot
 
 配信者コマンド:
-  /start          OBS配信開始 + 挨拶
-  /stop           OBS配信停止 + 締めの挨拶
-  /pause          AI会話を一時停止
-  /resume         AI会話を再開
-  /scene <名前>   OBSシーン切り替え
-  /say <テキスト> 藍花に喋らせる
-  /quit           アプリ終了
+  /start              OBS配信開始 + 挨拶
+  /stop               OBS配信停止 + 締めの挨拶
+  /pause              AI会話を一時停止
+  /resume             AI会話を再開
+  /scene <名前>       OBSシーン切り替え
+  /say <テキスト>     藍花に喋らせる
+
+  [YouTube]
+  /yt private         配信を非公開に変更
+  /yt public          配信を公開に変更
+  /yt unlisted        配信を限定公開に変更
+
+  [Twitch]
+  /tw subonly         サブスクライバー限定モードON
+  /tw subolyoff       サブスクライバー限定モードOFF
+  /tw emoteonly       エモートのみモードON
+  /tw emoteonlyoff    エモートのみモードOFF
+  /tw slow <秒>       低速モードON
+  /tw slowoff         低速モードOFF
+  /tw title <タイトル>  配信タイトル変更
+  /tw game <ゲーム名>   ゲームカテゴリ変更
+
+  /quit               アプリ終了
 """
 import asyncio
 import signal
@@ -22,18 +38,36 @@ from modules.tts import TTSEngine
 from modules.screen_capture import ScreenCapture
 from modules.chat_reader import create_chat_readers, ChatMessage
 from modules.obs_controller import OBSController
+from modules.youtube_controller import YouTubeController
+from modules.twitch_controller import TwitchController
 
 
 HELP_TEXT = """
 [コマンド一覧]
-  /start          配信開始（OBS配信スタート＋挨拶）
-  /stop           配信停止（締めの挨拶＋OBS停止）
-  /pause          AI会話を一時停止
-  /resume         AI会話を再開
-  /scene <名前>   OBSシーン切り替え
-  /say <テキスト> 藍花に喋らせる
-  /quit           アプリ終了
-  /help           このヘルプを表示
+  /start              配信開始（OBS配信スタート＋挨拶）
+  /stop               配信停止（締めの挨拶＋OBS停止）
+  /pause              AI会話を一時停止
+  /resume             AI会話を再開
+  /scene <名前>       OBSシーン切り替え
+  /say <テキスト>     藍花に喋らせる
+
+  [YouTube]
+  /yt private         配信を非公開に変更
+  /yt public          配信を公開に変更
+  /yt unlisted        配信を限定公開に変更
+
+  [Twitch]
+  /tw subonly         サブスクライバー限定モードON
+  /tw subolyoff       サブスクライバー限定モードOFF
+  /tw emoteonly       エモートのみモードON
+  /tw emoteonlyoff    エモートのみモードOFF
+  /tw slow <秒>       低速モードON（例: /tw slow 30）
+  /tw slowoff         低速モードOFF
+  /tw title <タイトル>  配信タイトル変更
+  /tw game <ゲーム名>   ゲームカテゴリ変更
+
+  /quit               アプリ終了
+  /help               このヘルプを表示
 """
 
 
@@ -46,6 +80,8 @@ class AITuber:
         self.tts = TTSEngine(self.character)
         self.screen = ScreenCapture() if settings.SCREEN_CAPTURE_ENABLED else None
         self.obs = OBSController()
+        self.youtube = YouTubeController() if settings.YOUTUBE_CONTROLLER_ENABLED else None
+        self.twitch = TwitchController() if settings.TWITCH_ENABLED else None
         self._running = False
         self._paused = False
         self._tasks: list[asyncio.Task] = []
@@ -134,11 +170,61 @@ class AITuber:
             await self.stop()
             sys.exit(0)
 
+        elif cmd == "/yt":
+            await self._handle_youtube_command(arg)
+
+        elif cmd == "/tw":
+            await self._handle_twitch_command(arg)
+
         elif cmd == "/help":
             print(HELP_TEXT)
 
         else:
             print(f"[不明なコマンド] {cmd}  /help でコマンド一覧を表示")
+
+    async def _handle_youtube_command(self, arg: str):
+        if not self.youtube:
+            print("[YouTube] YOUTUBE_CONTROLLER_ENABLED=true を.envに設定してください")
+            return
+        sub = arg.strip().lower()
+        if sub in ("private", "public", "unlisted"):
+            await self.youtube.set_privacy(sub)
+        else:
+            print("[YouTube] 使い方: /yt private | /yt public | /yt unlisted")
+
+    async def _handle_twitch_command(self, arg: str):
+        if not self.twitch:
+            print("[Twitch] TWITCH_ENABLED=true を.envに設定してください")
+            return
+        parts = arg.strip().split(maxsplit=1)
+        sub = parts[0].lower() if parts else ""
+        sub_arg = parts[1] if len(parts) > 1 else ""
+
+        if sub == "subonly":
+            await self.twitch.set_subscribers_only(True)
+        elif sub == "subolyoff":
+            await self.twitch.set_subscribers_only(False)
+        elif sub == "emoteonly":
+            await self.twitch.set_emote_only(True)
+        elif sub == "emoteonlyoff":
+            await self.twitch.set_emote_only(False)
+        elif sub == "slow":
+            secs = int(sub_arg) if sub_arg.isdigit() else 30
+            await self.twitch.set_slow_mode(secs)
+        elif sub == "slowoff":
+            await self.twitch.set_slow_mode(0)
+        elif sub == "title":
+            if sub_arg:
+                await self.twitch.update_stream_info(title=sub_arg)
+            else:
+                print("[Twitch] 使い方: /tw title タイトル名")
+        elif sub == "game":
+            if sub_arg:
+                await self.twitch.update_stream_info(game_name=sub_arg)
+            else:
+                print("[Twitch] 使い方: /tw game ゲーム名")
+        else:
+            print("[Twitch] /help でコマンド一覧を確認してください")
 
     async def _on_chat_message(self, msg: ChatMessage):
         if not self._running or self._paused:
