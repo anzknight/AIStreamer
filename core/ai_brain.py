@@ -121,31 +121,12 @@ class AIBrain:
         return response_text
 
     def _run_with_tools(self, messages: list) -> str:
-        while True:
-            response = self.client.chat.completions.create(
-                model=settings.AI_MODEL,
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",
-                max_tokens=512,
-            )
-
-            msg = response.choices[0].message
-            tool_calls = msg.tool_calls
-
-            if not tool_calls:
-                return msg.content or ""
-
-            messages = messages + [{"role": "assistant", "content": msg.content, "tool_calls": tool_calls}]
-
-            for tc in tool_calls:
-                inputs = json.loads(tc.function.arguments)
-                result = self._execute_tool_sync(tc.function.name, inputs)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result
-                })
+        response = self.client.chat.completions.create(
+            model=settings.AI_MODEL,
+            messages=messages,
+            max_tokens=512,
+        )
+        return response.choices[0].message.content or ""
 
     def _execute_tool_sync(self, name: str, inputs: dict) -> str:
         import asyncio
