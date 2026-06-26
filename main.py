@@ -3,6 +3,7 @@ AITuber - AIVTuber streaming bot
 """
 import asyncio
 import signal
+import sys
 import time
 from config.settings import settings
 from core.memory import MemoryManager
@@ -108,14 +109,15 @@ class AITuber:
 async def main():
     bot = AITuber()
 
-    loop = asyncio.get_running_loop()
+    if sys.platform != "win32":
+        loop = asyncio.get_running_loop()
 
-    def handle_shutdown(sig):
-        print(f"\n[Signal] {sig.name} received, shutting down...")
-        asyncio.create_task(bot.stop())
+        def handle_shutdown(sig):
+            print(f"\n[Signal] {sig.name} received, shutting down...")
+            asyncio.create_task(bot.stop())
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda s=sig: handle_shutdown(s))
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, lambda s=sig: handle_shutdown(s))
 
     await bot.start()
 
