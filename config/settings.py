@@ -8,9 +8,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent.parent
 
 class Settings:
-    # Anthropic
-    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-    AI_MODEL: str = "claude-opus-4-8"
+    # Groq
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    AI_MODEL: str = "llama-3.3-70b-versatile"
 
     # Character
     CHARACTER_FILE: Path = BASE_DIR / "config" / "character.json"

@@ -1,58 +1,55 @@
-import anthropic
-import base64
 import json
-from pathlib import Path
+import asyncio
+from groq import Groq
 from config.settings import settings
 from core.memory import MemoryManager
 
 
 TOOLS = [
     {
-        "name": "remember",
-        "description": "重要な情報を長期記憶に保存する。視聴者の名前、好み、ゲームの進捗など",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "category": {"type": "string", "description": "カテゴリ (viewer/game/general)"},
-                "key": {"type": "string", "description": "記憶のキー"},
-                "value": {"type": "string", "description": "記憶する値"}
-            },
-            "required": ["category", "key", "value"]
+        "type": "function",
+        "function": {
+            "name": "remember",
+            "description": "重要な情報を長期記憶に保存する。視聴者の名前、好み、ゲームの進捗など",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "カテゴリ (viewer/game/general)"},
+                    "key": {"type": "string", "description": "記憶のキー"},
+                    "value": {"type": "string", "description": "記憶する値"}
+                },
+                "required": ["category", "key", "value"]
+            }
         }
     },
     {
-        "name": "recall",
-        "description": "長期記憶から情報を取り出す",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "category": {"type": "string", "description": "カテゴリ"},
-                "key": {"type": "string", "description": "取り出すキー"}
-            },
-            "required": ["category", "key"]
+        "type": "function",
+        "function": {
+            "name": "recall",
+            "description": "長期記憶から情報を取り出す",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "カテゴリ"},
+                    "key": {"type": "string", "description": "取り出すキー"}
+                },
+                "required": ["category", "key"]
+            }
         }
     },
     {
-        "name": "recall_category",
-        "description": "あるカテゴリの全記憶を取り出す",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "category": {"type": "string", "description": "カテゴリ"}
-            },
-            "required": ["category"]
-        }
-    },
-    {
-        "name": "log_event",
-        "description": "配信中の出来事を記録する（ゲームクリア、面白いコメントなど）",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "event_type": {"type": "string", "description": "イベントタイプ"},
-                "description": {"type": "string", "description": "出来事の説明"}
-            },
-            "required": ["event_type", "description"]
+        "type": "function",
+        "function": {
+            "name": "log_event",
+            "description": "配信中の出来事を記録する",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_type": {"type": "string", "description": "イベントタイプ"},
+                    "description": {"type": "string", "description": "出来事の説明"}
+                },
+                "required": ["event_type", "description"]
+            }
         }
     }
 ]
@@ -79,11 +76,6 @@ def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -
 【現在のモード】
 {mode}
 
-【ツールの使い方】
-- 視聴者の名前や特徴を覚えたい時は remember ツールを使う
-- 以前の情報を参照したい時は recall ツールを使う
-- 配信中の重要な出来事は log_event ツールで記録する
-
 常にキャラクターを保ちながら、自然に返答してください。
 返答は日本語で、200文字以内を目安にしてください。"""
 
@@ -95,7 +87,7 @@ def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -
 
 class AIBrain:
     def __init__(self, memory: MemoryManager, character: dict):
-        self.client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.client = Groq(api_key=settings.GROQ_API_KEY)
         self.memory = memory
         self.character = character
 
@@ -116,58 +108,52 @@ class AIBrain:
 
         system = _build_system_prompt(self.character, mode, memory_context)
 
-        content_parts: list = []
-        if screen_image:
-            b64 = base64.standard_b64encode(screen_image).decode("utf-8")
-            content_parts.append({
-                "type": "image",
-                "source": {"type": "base64", "media_type": "image/png", "data": b64}
-            })
+        user_text = f"[{username}]: {user_input}" if username else user_input
+        messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": user_text}]
 
-        if username:
-            content_parts.append({"type": "text", "text": f"[{username}]: {user_input}"})
-        else:
-            content_parts.append({"type": "text", "text": user_input})
+        response_text = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: self._run_with_tools(messages)
+        )
 
-        messages = history + [{"role": "user", "content": content_parts}]
-
-        response_text = await self._run_with_tools(system, messages)
-
-        await self.memory.add_message("user", f"[{username}]: {user_input}" if username else user_input)
+        await self.memory.add_message("user", user_text)
         await self.memory.add_message("assistant", response_text)
 
         return response_text
 
-    async def _run_with_tools(self, system: str, messages: list) -> str:
+    def _run_with_tools(self, messages: list) -> str:
         while True:
-            with self.client.messages.stream(
+            response = self.client.chat.completions.create(
                 model=settings.AI_MODEL,
-                max_tokens=512,
-                system=system,
                 messages=messages,
                 tools=TOOLS,
-                thinking={"type": "adaptive"},
-            ) as stream:
-                response = stream.get_final_message()
+                tool_choice="auto",
+                max_tokens=512,
+            )
 
-            tool_uses = [b for b in response.content if b.type == "tool_use"]
-            if not tool_uses:
-                text_blocks = [b for b in response.content if b.type == "text"]
-                return text_blocks[0].text if text_blocks else ""
+            msg = response.choices[0].message
+            tool_calls = msg.tool_calls
 
-            tool_results = []
-            for tool_use in tool_uses:
-                result = await self._execute_tool(tool_use.name, tool_use.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": str(result)
+            if not tool_calls:
+                return msg.content or ""
+
+            messages = messages + [{"role": "assistant", "content": msg.content, "tool_calls": tool_calls}]
+
+            for tc in tool_calls:
+                inputs = json.loads(tc.function.arguments)
+                result = self._execute_tool_sync(tc.function.name, inputs)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result
                 })
 
-            messages = messages + [
-                {"role": "assistant", "content": response.content},
-                {"role": "user", "content": tool_results}
-            ]
+    def _execute_tool_sync(self, name: str, inputs: dict) -> str:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self._execute_tool(name, inputs))
+        finally:
+            loop.close()
 
     async def _execute_tool(self, name: str, inputs: dict) -> str:
         if name == "remember":
@@ -176,14 +162,11 @@ class AIBrain:
         elif name == "recall":
             value = await self.memory.recall(inputs["category"], inputs["key"])
             return value or "見つかりませんでした"
-        elif name == "recall_category":
-            data = await self.memory.recall_category(inputs["category"])
-            return json.dumps(data, ensure_ascii=False) if data else "データなし"
         elif name == "log_event":
             await self.memory.log_event(inputs["event_type"], inputs["description"])
             return "記録しました"
         return "不明なツール"
 
     async def commentary(self, screen_image: bytes, game_context: str = "") -> str:
-        prompt = game_context or "今のゲーム画面について実況してください。"
-        return await self.respond(prompt, mode="game", screen_image=screen_image)
+        prompt = game_context or "今やっているゲームについて実況してください。"
+        return await self.respond(prompt, mode="game")
