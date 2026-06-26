@@ -11,7 +11,7 @@ from core.ai_brain import AIBrain
 from core.rules import RuleEngine
 from modules.tts import TTSEngine
 from modules.screen_capture import ScreenCapture
-from modules.chat_reader import create_chat_reader, ChatMessage
+from modules.chat_reader import create_chat_readers, ChatMessage
 from modules.obs_controller import OBSController
 
 
@@ -40,7 +40,8 @@ class AITuber:
         await self._run_loops()
 
     async def _run_loops(self):
-        tasks = [asyncio.create_task(self._chat_loop())]
+        readers = create_chat_readers()
+        tasks = [asyncio.create_task(r.read(self._on_chat_message)) for r in readers]
 
         if settings.SCREEN_CAPTURE_ENABLED and self.screen:
             tasks.append(asyncio.create_task(
@@ -53,10 +54,6 @@ class AITuber:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             pass
-
-    async def _chat_loop(self):
-        reader = create_chat_reader(self._on_chat_message)
-        await reader.read(self._on_chat_message)
 
     async def _on_chat_message(self, msg: ChatMessage):
         if not self._running:

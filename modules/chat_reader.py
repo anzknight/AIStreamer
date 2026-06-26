@@ -18,6 +18,7 @@ class YouTubeChatReader:
         try:
             import pytchat
             chat = pytchat.create(video_id=self.video_id)
+            print(f"[YouTube Chat] Connected to video: {self.video_id}")
             while chat.is_alive():
                 for item in chat.get().sync_items():
                     await callback(ChatMessage("youtube", item.author.name, item.message))
@@ -33,27 +34,32 @@ class TwitchChatReader:
 
     async def read(self, callback):
         try:
+            import twitchio
             from twitchio.ext import commands
 
+            cb = callback
+            token = self.token
+            channel = self.channel
+
             class Bot(commands.Bot):
-                def __init__(self, cb):
-                    super().__init__(token=self.token, prefix="!", initial_channels=[self.channel])
-                    self.cb = cb
+                def __init__(self):
+                    super().__init__(token=token, prefix="!", initial_channels=[channel])
+
+                async def event_ready(self):
+                    print(f"[Twitch Chat] Connected to #{channel}")
 
                 async def event_message(self, message):
                     if message.echo:
                         return
-                    await self.cb(ChatMessage("twitch", message.author.name, message.content))
+                    await cb(ChatMessage("twitch", message.author.name, message.content))
 
-            bot = Bot(callback)
+            bot = Bot()
             await bot.start()
         except Exception as e:
             print(f"[Twitch Chat] Error: {e}")
 
 
 class ConsoleChatReader:
-    """Reads chat input from console (for testing without live chat)"""
-
     async def read(self, callback):
         print("[Console Chat] Type messages in format: username: message")
         loop = asyncio.get_event_loop()
@@ -69,10 +75,12 @@ class ConsoleChatReader:
                 break
 
 
-def create_chat_reader(callback):
+def create_chat_readers() -> list:
+    readers = []
     if settings.YOUTUBE_ENABLED and settings.YOUTUBE_VIDEO_ID:
-        return YouTubeChatReader(settings.YOUTUBE_VIDEO_ID)
-    elif settings.TWITCH_ENABLED and settings.TWITCH_TOKEN:
-        return TwitchChatReader(settings.TWITCH_TOKEN, settings.TWITCH_CHANNEL)
-    else:
-        return ConsoleChatReader()
+        readers.append(YouTubeChatReader(settings.YOUTUBE_VIDEO_ID))
+    if settings.TWITCH_ENABLED and settings.TWITCH_TOKEN and settings.TWITCH_CHANNEL:
+        readers.append(TwitchChatReader(settings.TWITCH_TOKEN, settings.TWITCH_CHANNEL))
+    if not readers:
+        readers.append(ConsoleChatReader())
+    return readers
