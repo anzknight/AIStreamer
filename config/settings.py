@@ -55,7 +55,12 @@ class Settings:
     YOUTUBE_CONTROLLER_ENABLED: bool = os.getenv("YOUTUBE_CONTROLLER_ENABLED", "false").lower() == "true"
 
     # Streaming mode
-    MODE: str = os.getenv("AITUBER_MODE", "chat")  # chat | game | stream
+    MODE: str = os.getenv("AITUBER_MODE", "chat")  # chat | game | gamedev | video
+
+    # Video recording mode
+    VIDEO_MODE: bool = os.getenv("VIDEO_MODE", "false").lower() == "true"
+    SAVE_AUDIO_FILES: bool = os.getenv("SAVE_AUDIO_FILES", "false").lower() == "true"
+    AUDIO_SAVE_DIR: Path = BASE_DIR / "data" / "audio_clips"
 
     @classmethod
     def load_character(cls) -> dict:

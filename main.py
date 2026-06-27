@@ -189,14 +189,14 @@ class AITuber:
             print("[再開] AI会話を再開しました")
 
         elif cmd == "/mode":
-            modes = {"chat": "雑談", "game": "ゲームプレイ実況", "gamedev": "ゲーム制作"}
+            modes = {"chat": "雑談", "game": "ゲームプレイ実況", "gamedev": "ゲーム制作", "video": "動画実況"}
             if arg in modes:
                 self._mode = arg
                 msg = f"モードを「{modes[arg]}」に切り替えました！"
                 print(f"[モード] {msg}")
                 await self._say(msg)
             else:
-                print(f"[モード] 使い方: /mode chat | /mode game | /mode gamedev")
+                print(f"[モード] 使い方: /mode chat | /mode game | /mode gamedev | /mode video")
                 print(f"[モード] 現在: {self._mode} ({modes.get(self._mode, '不明')})")
 
         elif cmd == "/scene":

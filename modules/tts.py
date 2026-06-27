@@ -15,6 +15,10 @@ class TTSEngine:
         self.pitch = voice_cfg.get("pitch", "+5Hz")
         self.output_dir = settings.TTS_OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._audio_save_dir = settings.AUDIO_SAVE_DIR
+        if settings.SAVE_AUDIO_FILES:
+            self._audio_save_dir.mkdir(parents=True, exist_ok=True)
+        self._clip_counter = 0
         self.last_file: Path | None = None
         self._queue: asyncio.Queue = asyncio.Queue()
         self._current_proc: asyncio.subprocess.Process | None = None
@@ -111,6 +115,14 @@ class TTSEngine:
             print(f"[TTS] 音声合成エラー: {e}")
             return
         self.last_file = output_file
+
+        # 連番保存（動画制作用）
+        if settings.SAVE_AUDIO_FILES:
+            self._clip_counter += 1
+            import shutil
+            save_path = self._audio_save_dir / f"clip_{self._clip_counter:04d}.mp3"
+            shutil.copy2(str(output_file), str(save_path))
+            print(f"[TTS] 保存: {save_path.name}")
 
         # 字幕ON（音声再生直前）
         if self._on_speak_start:
