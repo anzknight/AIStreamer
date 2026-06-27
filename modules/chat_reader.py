@@ -15,10 +15,16 @@ class YouTubeChatReader:
         self.video_id = video_id
 
     async def read(self, callback):
+        # video_idはYouTubeの視聴URL末尾のID（例: watch?v=XXXXXXXXXXX のXXX部分）
+        # ストリームキーやRTMP URLは使えません
+        if not self.video_id or "/" in self.video_id or "rtmp" in self.video_id:
+            print("[YouTube Chat] 無効な動画IDです。")
+            print("[YouTube Chat] YouTubeで配信中のURLを開き watch?v= の後の文字列を YOUTUBE_VIDEO_ID に設定してください")
+            return
         try:
             import pytchat
             chat = pytchat.create(video_id=self.video_id)
-            print(f"[YouTube Chat] Connected to video: {self.video_id}")
+            print(f"[YouTube Chat] Connected: {self.video_id}")
             while chat.is_alive():
                 for item in chat.get().sync_items():
                     await callback(ChatMessage("youtube", item.author.name, item.message))
@@ -44,8 +50,6 @@ class TwitchChatReader:
                 def __init__(self):
                     super().__init__(
                         token=token,
-                        client_id="",
-                        nick=channel,
                         prefix="!",
                         initial_channels=[channel],
                     )
