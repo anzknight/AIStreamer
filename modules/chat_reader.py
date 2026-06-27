@@ -34,16 +34,21 @@ class TwitchChatReader:
 
     async def read(self, callback):
         try:
-            import twitchio
             from twitchio.ext import commands
 
             cb = callback
-            token = self.token
+            token = self.token.replace("oauth:", "")
             channel = self.channel
 
             class Bot(commands.Bot):
                 def __init__(self):
-                    super().__init__(token=token, prefix="!", initial_channels=[channel])
+                    super().__init__(
+                        token=token,
+                        client_id="",
+                        nick=channel,
+                        prefix="!",
+                        initial_channels=[channel],
+                    )
 
                 async def event_ready(self):
                     print(f"[Twitch Chat] Connected to #{channel}")
