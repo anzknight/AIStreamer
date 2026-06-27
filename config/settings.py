@@ -34,6 +34,11 @@ class Settings:
     OBS_HOST: str = os.getenv("OBS_HOST", "localhost")
     OBS_PORT: int = int(os.getenv("OBS_PORT", "4455"))
     OBS_PASSWORD: str = os.getenv("OBS_PASSWORD", "")
+    OBS_AUDIO_SOURCE: str = os.getenv("OBS_AUDIO_SOURCE", "")  # メディアソース名（YouTube音声用）
+
+    # Auto talk
+    AUTO_TALK_ENABLED: bool = os.getenv("AUTO_TALK_ENABLED", "true").lower() == "true"
+    AUTO_TALK_INTERVAL: int = int(os.getenv("AUTO_TALK_INTERVAL", "120"))  # 秒
 
     # YouTube Chat
     YOUTUBE_ENABLED: bool = os.getenv("YOUTUBE_ENABLED", "false").lower() == "true"

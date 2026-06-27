@@ -9,6 +9,12 @@ AITuber - AIVTuber streaming bot
   /scene <名前>       OBSシーン切り替え
   /say <テキスト>     藍花に喋らせる
 
+  [記憶]
+  /mem show           全カテゴリの記憶を表示
+  /mem show <カテゴリ> カテゴリの記憶を表示
+  /mem add <カテゴリ> <キー> <値>  記憶を追加
+  /mem del <カテゴリ> <キー>       記憶を削除
+
   [YouTube]
   /yt private         配信を非公開に変更
   /yt public          配信を公開に変更
@@ -25,11 +31,13 @@ AITuber - AIVTuber streaming bot
   /tw game <ゲーム名>   ゲームカテゴリ変更
 
   /quit               アプリ終了
+  /help               このヘルプを表示
 """
 import asyncio
 import signal
 import sys
 import time
+import json
 from config.settings import settings
 from core.memory import MemoryManager
 from core.ai_brain import AIBrain
@@ -41,7 +49,6 @@ from modules.obs_controller import OBSController
 from modules.youtube_controller import YouTubeController
 from modules.twitch_controller import TwitchController
 
-
 HELP_TEXT = """
 [コマンド一覧]
   /start              配信開始（OBS配信スタート＋挨拶）
@@ -51,24 +58,30 @@ HELP_TEXT = """
   /scene <名前>       OBSシーン切り替え
   /say <テキスト>     藍花に喋らせる
 
+  [記憶管理]
+  /mem show           全記憶を表示
+  /mem show viewer    viewerカテゴリの記憶を表示
+  /mem add viewer 田中 常連さん  記憶を追加
+  /mem del viewer 田中           記憶を削除
+
   [YouTube]
-  /yt private         配信を非公開に変更
-  /yt public          配信を公開に変更
-  /yt unlisted        配信を限定公開に変更
+  /yt private | /yt public | /yt unlisted
 
   [Twitch]
-  /tw subonly         サブスクライバー限定モードON
-  /tw subolyoff       サブスクライバー限定モードOFF
-  /tw emoteonly       エモートのみモードON
-  /tw emoteonlyoff    エモートのみモードOFF
-  /tw slow <秒>       低速モードON（例: /tw slow 30）
-  /tw slowoff         低速モードOFF
-  /tw title <タイトル>  配信タイトル変更
-  /tw game <ゲーム名>   ゲームカテゴリ変更
+  /tw subonly | /tw emoteonly | /tw slow 30 | /tw title タイトル
 
-  /quit               アプリ終了
-  /help               このヘルプを表示
+  /quit / /help
 """
+
+AUTO_TALK_TOPICS = [
+    "みんな今日はどんなゲームしてるのかな？気になる！",
+    "最近ハマってるゲームある？教えてほしいな！",
+    "ちょっと静かだね、みんな何してるのかな？",
+    "突然だけど、みんなの推しキャラって誰？",
+    "今日の配信楽しんでる？何かリクエストあったら言ってね！",
+    "ゲームしながら思うんだけど、難しいステージって燃えるよね！",
+    "みんなのゲーム歴どのくらい？私はずっとゲーム好きだよ！",
+]
 
 
 class AITuber:
@@ -84,7 +97,9 @@ class AITuber:
         self.twitch = TwitchController() if settings.TWITCH_ENABLED else None
         self._running = False
         self._paused = False
+        self._last_chat_time = time.time()
         self._tasks: list[asyncio.Task] = []
+        self.tts.set_obs(self.obs)
 
     async def start(self):
         print(f"[AITuber] Starting as {self.character['name']}...")
@@ -99,17 +114,36 @@ class AITuber:
         tasks = [asyncio.create_task(r.read(self._on_chat_message)) for r in readers]
         tasks.append(asyncio.create_task(self._command_loop()))
 
+        if settings.AUTO_TALK_ENABLED:
+            tasks.append(asyncio.create_task(self._auto_talk_loop()))
+
         if settings.SCREEN_CAPTURE_ENABLED and self.screen:
             tasks.append(asyncio.create_task(
                 self.screen.capture_loop(self._on_screen_capture)
             ))
 
         self._tasks = tasks
-
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
             pass
+
+    async def _auto_talk_loop(self):
+        """一定時間チャットがない時に自動で話題を作る"""
+        import random
+        await asyncio.sleep(settings.AUTO_TALK_INTERVAL)
+        while self._running:
+            await asyncio.sleep(10)
+            if self._paused:
+                continue
+            elapsed = time.time() - self._last_chat_time
+            if elapsed >= settings.AUTO_TALK_INTERVAL:
+                topic = random.choice(AUTO_TALK_TOPICS)
+                response = await self.ai.respond(topic, mode=settings.MODE)
+                if response:
+                    print(f"[自動発言] {response}")
+                    await self._say(response)
+                self._last_chat_time = time.time()
 
     async def _command_loop(self):
         loop = asyncio.get_event_loop()
@@ -137,7 +171,7 @@ class AITuber:
             await self._say(msg)
 
         elif cmd == "/stop":
-            farewell = f"今日も来てくれてありがとー！またねー！"
+            farewell = "今日も来てくれてありがとー！またねー！"
             print(f"[配信終了] {farewell}")
             await self._say(farewell)
             await asyncio.sleep(3)
@@ -157,18 +191,17 @@ class AITuber:
                 await self.obs.switch_scene(arg)
                 print(f"[シーン切替] {arg}")
             else:
-                print("[エラー] シーン名を指定してください: /scene シーン名")
+                print("[エラー] /scene シーン名")
 
         elif cmd == "/say":
             if arg:
                 print(f"[手動発言] {arg}")
                 await self._say(arg)
             else:
-                print("[エラー] テキストを指定してください: /say こんにちは")
+                print("[エラー] /say テキスト")
 
-        elif cmd == "/quit":
-            await self.stop()
-            sys.exit(0)
+        elif cmd == "/mem":
+            await self._handle_memory_command(arg)
 
         elif cmd == "/yt":
             await self._handle_youtube_command(arg)
@@ -176,11 +209,60 @@ class AITuber:
         elif cmd == "/tw":
             await self._handle_twitch_command(arg)
 
+        elif cmd == "/quit":
+            await self.stop()
+            sys.exit(0)
+
         elif cmd == "/help":
             print(HELP_TEXT)
 
         else:
             print(f"[不明なコマンド] {cmd}  /help でコマンド一覧を表示")
+
+    async def _handle_memory_command(self, arg: str):
+        parts = arg.strip().split(maxsplit=3)
+        sub = parts[0].lower() if parts else ""
+
+        if sub == "show":
+            category = parts[1] if len(parts) > 1 else None
+            if category:
+                data = await self.memory.recall_category(category)
+                if data:
+                    print(f"\n[記憶:{category}]")
+                    for k, v in data.items():
+                        print(f"  {k}: {v}")
+                else:
+                    print(f"[記憶] {category} に記憶はありません")
+            else:
+                for cat in ("viewer", "game", "general"):
+                    data = await self.memory.recall_category(cat)
+                    if data:
+                        print(f"\n[記憶:{cat}]")
+                        for k, v in data.items():
+                            print(f"  {k}: {v}")
+                print()
+
+        elif sub == "add":
+            if len(parts) >= 4:
+                category, key, value = parts[1], parts[2], parts[3]
+                await self.memory.remember(category, key, value)
+                print(f"[記憶] 保存しました: [{category}] {key} = {value}")
+            else:
+                print("[エラー] /mem add <カテゴリ> <キー> <値>")
+
+        elif sub == "del":
+            if len(parts) >= 3:
+                category, key = parts[1], parts[2]
+                await self.memory._db.execute(
+                    "DELETE FROM long_term WHERE category=? AND key=?", (category, key)
+                )
+                await self.memory._db.commit()
+                print(f"[記憶] 削除しました: [{category}] {key}")
+            else:
+                print("[エラー] /mem del <カテゴリ> <キー>")
+
+        else:
+            print("[記憶] 使い方: /mem show | /mem add <カテゴリ> <キー> <値> | /mem del <カテゴリ> <キー>")
 
     async def _handle_youtube_command(self, arg: str):
         if not self.youtube:
@@ -230,6 +312,7 @@ class AITuber:
         if not self._running or self._paused:
             return
 
+        self._last_chat_time = time.time()
         print(f"[Chat] {msg.platform} | {msg.username}: {msg.text}")
 
         current_time = time.time()
@@ -244,8 +327,11 @@ class AITuber:
             mode=settings.MODE,
             username=msg.username,
         )
-        print(f"[AI] {response}")
-        await self._say(response)
+        if response:
+            print(f"[AI] {response}")
+            await self._say(response)
+        else:
+            print(f"[AI] 返答なし（スキップ）")
 
         if milestone and not rule_response:
             await self._say(milestone)
@@ -262,6 +348,13 @@ class AITuber:
         await self.tts.speak(text)
         if self.obs.connected:
             await self.obs.set_text_source("SubtitleText", text)
+            # 字幕を一定時間後にクリア
+            asyncio.create_task(self._clear_subtitle_after(max(3.0, len(text) / 8.0)))
+
+    async def _clear_subtitle_after(self, delay: float):
+        await asyncio.sleep(delay)
+        if self.obs.connected:
+            await self.obs.clear_text_source("SubtitleText")
 
     async def stop(self):
         print("[AITuber] Stopping...")

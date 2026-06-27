@@ -121,12 +121,21 @@ class AIBrain:
         return response_text
 
     def _run_with_tools(self, messages: list) -> str:
-        response = self.client.chat.completions.create(
-            model=settings.AI_MODEL,
-            messages=messages,
-            max_tokens=512,
-        )
-        return response.choices[0].message.content or ""
+        for attempt in range(3):
+            try:
+                response = self.client.chat.completions.create(
+                    model=settings.AI_MODEL,
+                    messages=messages,
+                    max_tokens=150,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                if attempt == 2:
+                    print(f"[AI] 返答取得に失敗しました: {e}")
+                    return ""
+                import time as _time
+                _time.sleep(1.5 * (attempt + 1))
+        return ""
 
     def _execute_tool_sync(self, name: str, inputs: dict) -> str:
         import asyncio

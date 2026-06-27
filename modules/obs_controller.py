@@ -1,4 +1,19 @@
+import asyncio
+from pathlib import Path
 from config.settings import settings
+
+SUBTITLE_MAX_CHARS = 30  # 1行あたりの最大文字数
+
+
+def _wrap_text(text: str, max_chars: int = SUBTITLE_MAX_CHARS) -> str:
+    """長いテキストを改行で折り返す"""
+    lines = []
+    while len(text) > max_chars:
+        lines.append(text[:max_chars])
+        text = text[max_chars:]
+    if text:
+        lines.append(text)
+    return "\n".join(lines)
 
 
 class OBSController:
@@ -25,13 +40,38 @@ class OBSController:
         if not self.connected or not self._ws:
             return
         try:
+            wrapped = _wrap_text(text)
             self._ws.set_input_settings(
                 source_name,
-                {"text": text},
+                {"text": wrapped},
                 overlay=True
             )
         except Exception as e:
             print(f"[OBS] set_text_source error: {e}")
+
+    async def play_audio_source(self, source_name: str, file_path: Path):
+        """OBSのメディアソースを使って音声を再生（YouTube配信に音声を乗せる）"""
+        if not self.connected or not self._ws:
+            return
+        try:
+            self._ws.set_input_settings(
+                source_name,
+                {
+                    "local_file": str(file_path),
+                    "is_local_file": True,
+                    "looping": False,
+                    "restart_on_activate": True,
+                },
+                overlay=True
+            )
+            # メディアソースを再起動して再生
+            self._ws.trigger_media_input_action(source_name, "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART")
+        except Exception as e:
+            print(f"[OBS] play_audio_source error: {e}")
+
+    async def clear_text_source(self, source_name: str):
+        """字幕をクリア"""
+        await self.set_text_source(source_name, "")
 
     async def start_streaming(self):
         if not self.connected or not self._ws:

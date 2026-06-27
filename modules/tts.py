@@ -12,8 +12,13 @@ class TTSEngine:
         self.pitch = voice_cfg.get("pitch", "+5Hz")
         self.output_dir = settings.TTS_OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.last_file: Path | None = None
         self._queue: asyncio.Queue = asyncio.Queue()
         self._playing = False
+        self._obs = None  # OBSControllerを後から注入
+
+    def set_obs(self, obs_controller):
+        self._obs = obs_controller
 
     async def speak(self, text: str, wait: bool = False):
         if not settings.TTS_ENABLED:
@@ -37,9 +42,18 @@ class TTSEngine:
         output_file = self.output_dir / "speech.mp3"
         communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, pitch=self.pitch)
         await communicate.save(str(output_file))
-        await self._play_audio(output_file)
+        self.last_file = output_file
 
-    async def _play_audio(self, file_path: Path):
+        # OBSメディアソース経由で再生（YouTube/Twitch配信に音声を乗せる）
+        if self._obs and self._obs.connected and settings.OBS_AUDIO_SOURCE:
+            await self._obs.play_audio_source(settings.OBS_AUDIO_SOURCE, output_file)
+            # 音声長さを推定してウェイト（edge-ttsは約150文字/秒）
+            estimated_secs = max(2.0, len(text) / 8.0)
+            await asyncio.sleep(estimated_secs)
+        else:
+            await self._play_local(output_file)
+
+    async def _play_local(self, file_path: Path):
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(file_path),
@@ -48,7 +62,6 @@ class TTSEngine:
             )
             await proc.wait()
         except FileNotFoundError:
-            # ffplay not available, try aplay
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "mpg123", "-q", str(file_path),
@@ -57,4 +70,4 @@ class TTSEngine:
                 )
                 await proc.wait()
             except FileNotFoundError:
-                print(f"[TTS] Audio player not found. Text: {file_path}")
+                print(f"[TTS] Audio player not found. File: {file_path}")
