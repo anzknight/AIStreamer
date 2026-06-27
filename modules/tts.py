@@ -14,23 +14,21 @@ class TTSEngine:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.last_file: Path | None = None
         self._queue: asyncio.Queue = asyncio.Queue()
-        self._playing = False
         self._stop = False
         self._current_proc: asyncio.subprocess.Process | None = None
+        self._worker_task: asyncio.Task | None = None
         self._obs = None
-        self._on_speak_start = None  # 再生開始時のコールバック（字幕同期用）
-        self._on_speak_end = None    # 再生終了時のコールバック（字幕クリア用）
+        self._on_speak_start = None
+        self._on_speak_end = None
 
     def set_obs(self, obs_controller):
         self._obs = obs_controller
 
     def set_subtitle_callbacks(self, on_start, on_end):
-        """字幕をTTS再生と同期させるコールバックを設定"""
         self._on_speak_start = on_start
         self._on_speak_end = on_end
 
-    def clear_queue(self):
-        """溜まった音声キューをクリア（ズレ防止）"""
+    def _clear_queue(self):
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
@@ -40,15 +38,26 @@ class TTSEngine:
     async def reset(self):
         """音声を完全リセット（再生中の音声も停止）"""
         self._stop = True
-        self.clear_queue()
-        # 再生中のプロセスを強制終了
+        self._clear_queue()
+
+        # Cancel the worker task
+        if self._worker_task and not self._worker_task.done():
+            self._worker_task.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(self._worker_task), timeout=0.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+        self._worker_task = None
+
+        # Kill any running audio process
         if self._current_proc and self._current_proc.returncode is None:
             try:
                 self._current_proc.terminate()
                 await asyncio.sleep(0.2)
             except Exception:
                 pass
-        self._playing = False
+        self._current_proc = None
+
         self._stop = False
         print("[TTS] リセットしました")
 
@@ -58,31 +67,46 @@ class TTSEngine:
             if self._on_speak_start:
                 await self._on_speak_start(text)
             return
-        # キューに2件以上溜まっていたら古いものを捨てて最新だけ残す
-        if self._queue.qsize() >= 2:
-            self.clear_queue()
-        await self._queue.put(text)
-        if not self._playing:
-            if wait:
-                await self._process_queue()
-            else:
-                asyncio.create_task(self._process_queue())
 
-    async def _process_queue(self):
-        self._playing = True
+        # Drop backlog if too many queued
+        if self._queue.qsize() >= 2:
+            self._clear_queue()
+
+        await self._queue.put(text)
+
+        # Start worker only if none is running
+        if self._worker_task is None or self._worker_task.done():
+            if wait:
+                await self._worker()
+            else:
+                self._worker_task = asyncio.create_task(self._worker())
+
+    async def _worker(self):
         while not self._queue.empty() and not self._stop:
-            text = await self._queue.get()
-            if not self._stop:
-                await self._synthesize_and_play(text)
-        self._playing = False
+            try:
+                text = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if self._stop:
+                break
+            await self._synthesize_and_play(text)
 
     async def _synthesize_and_play(self, text: str):
+        if self._stop:
+            return
         output_file = self.output_dir / "speech.mp3"
-        communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, pitch=self.pitch)
-        await communicate.save(str(output_file))
+        try:
+            communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, pitch=self.pitch)
+            await communicate.save(str(output_file))
+        except Exception as e:
+            print(f"[TTS] 音声合成エラー: {e}")
+            return
         self.last_file = output_file
 
-        # 再生開始と同時に字幕を更新
+        if self._stop:
+            return
+
+        # Subtitle on
         if self._on_speak_start:
             await self._on_speak_start(text)
 
@@ -93,29 +117,25 @@ class TTSEngine:
         else:
             await self._play_local(output_file)
 
-        # 再生終了後に字幕クリア
+        # Subtitle off
         if self._on_speak_end:
             await self._on_speak_end()
 
     async def _play_local(self, file_path: Path):
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(file_path),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            self._current_proc = proc
-            await proc.wait()
-            self._current_proc = None
-        except FileNotFoundError:
+        for player, args in [
+            ("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet"]),
+            ("mpg123", ["-q"]),
+        ]:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "mpg123", "-q", str(file_path),
+                    player, *args, str(file_path),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
                 self._current_proc = proc
                 await proc.wait()
                 self._current_proc = None
+                return
             except FileNotFoundError:
-                print(f"[TTS] Audio player not found. File: {file_path}")
+                continue
+        print(f"[TTS] Audio player not found. File: {file_path}")
