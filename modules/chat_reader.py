@@ -14,25 +14,37 @@ class YouTubeChatReader:
     def __init__(self):
         self._video_id: str | None = settings.YOUTUBE_VIDEO_ID or None
         self._chat = None
+        self._obs = None
 
     def set_video_id(self, video_id: str):
         self._video_id = video_id
         self._chat = None  # リセットして再接続
 
+    def set_obs(self, obs_controller):
+        self._obs = obs_controller
+
     async def _auto_detect_video_id(self) -> str | None:
-        """YouTube APIでアクティブな配信IDを自動取得"""
+        """OBS経由でYouTube動画IDを自動取得"""
+        # 1. OBSのストリーム設定から取得を試みる
+        if self._obs and self._obs.connected:
+            vid = self._obs.get_youtube_video_id()
+            if vid:
+                print(f"[YouTube Chat] OBSから動画IDを取得: {vid}")
+                return vid
+
+        # 2. YouTube APIで取得を試みる
         try:
             from modules.youtube_controller import YouTubeController
             yt = YouTubeController()
-            if not yt._authenticate():
-                return None
-            bid = yt._get_active_broadcast_id()
-            if bid:
-                print(f"[YouTube Chat] 配信IDを自動取得しました: {bid}")
-            return bid
+            if yt._authenticate():
+                bid = yt._get_active_broadcast_id()
+                if bid:
+                    print(f"[YouTube Chat] YouTube APIから動画IDを取得: {bid}")
+                    return bid
         except Exception as e:
-            print(f"[YouTube Chat] 自動取得失敗: {e}")
-            return None
+            print(f"[YouTube Chat] YouTube API自動取得失敗: {e}")
+
+        return None
 
     async def read(self, callback):
         import pytchat
@@ -48,8 +60,18 @@ class YouTubeChatReader:
             print("[YouTube Chat] YouTube Studioの配信URLから watch?v= 以降を YOUTUBE_VIDEO_ID に設定してください")
             return
 
-        print(f"[YouTube Chat] 接続中: {self._video_id}")
         while True:
+            # 毎回接続前に動画IDを確認・再取得
+            if not self._video_id or "/" in self._video_id or "rtmp" in self._video_id.lower():
+                self._video_id = await self._auto_detect_video_id()
+
+            if not self._video_id:
+                print("[YouTube Chat] 動画IDが見つかりません。30秒後に再試行...")
+                print("[YouTube Chat] 配信開始後に /yt setid <動画ID> で設定できます")
+                await asyncio.sleep(30)
+                continue
+
+            print(f"[YouTube Chat] 接続中: {self._video_id}")
             try:
                 chat = pytchat.create(video_id=self._video_id)
                 print(f"[YouTube Chat] Connected!")
@@ -57,11 +79,12 @@ class YouTubeChatReader:
                     for item in chat.get().sync_items():
                         await callback(ChatMessage("youtube", item.author.name, item.message))
                     await asyncio.sleep(1)
-                print("[YouTube Chat] 配信が終了または切断されました。30秒後に再接続します...")
+                print("[YouTube Chat] 配信が終了しました。30秒後に再接続します...")
+                self._video_id = None  # 次のループでIDを再取得
                 await asyncio.sleep(30)
-                print(f"[YouTube Chat] 再接続中: {self._video_id}")
             except Exception as e:
                 print(f"[YouTube Chat] Error: {e} → 10秒後に再接続します")
+                self._video_id = None
                 await asyncio.sleep(10)
 
 

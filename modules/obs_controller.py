@@ -98,3 +98,26 @@ class OBSController:
             self._ws.set_current_program_scene(scene_name)
         except Exception as e:
             print(f"[OBS] switch_scene error: {e}")
+
+    def get_youtube_video_id(self) -> str | None:
+        """OBSのストリーム設定からYouTube動画IDを取得"""
+        if not self.connected or not self._ws:
+            return None
+        try:
+            resp = self._ws.get_stream_service_settings()
+            settings_data = resp.stream_service_settings
+            # YouTube配信URLまたはキーからIDを抽出
+            import re
+            # stream_idフィールドがある場合
+            stream_id = settings_data.get("stream_id", "")
+            if stream_id:
+                return stream_id
+            # keyフィールドからYouTube動画IDを抽出試行
+            key = settings_data.get("key", "")
+            # YouTube broadcast IDはBase64っぽい文字列
+            match = re.search(r"([A-Za-z0-9_-]{11})", key)
+            if match:
+                return match.group(1)
+        except Exception as e:
+            print(f"[OBS] get_youtube_video_id error: {e}")
+        return None
