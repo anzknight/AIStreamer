@@ -27,12 +27,23 @@ class TTSEngine:
         self._on_speak_start = on_start
         self._on_speak_end = on_end
 
+    def clear_queue(self):
+        """溜まった音声キューをクリア（ズレ防止）"""
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except Exception:
+                break
+
     async def speak(self, text: str, wait: bool = False):
         if not settings.TTS_ENABLED:
             print(f"[TTS] {text}")
             if self._on_speak_start:
                 await self._on_speak_start(text)
             return
+        # キューに2件以上溜まっていたら古いものを捨てて最新だけ残す
+        if self._queue.qsize() >= 2:
+            self.clear_queue()
         await self._queue.put(text)
         if not self._playing:
             if wait:
