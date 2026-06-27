@@ -5,59 +5,36 @@ from config.settings import settings
 from core.memory import MemoryManager
 
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "remember",
-            "description": "重要な情報を長期記憶に保存する。視聴者の名前、好み、ゲームの進捗など",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "category": {"type": "string", "description": "カテゴリ (viewer/game/general)"},
-                    "key": {"type": "string", "description": "記憶のキー"},
-                    "value": {"type": "string", "description": "記憶する値"}
-                },
-                "required": ["category", "key", "value"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall",
-            "description": "長期記憶から情報を取り出す",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "category": {"type": "string", "description": "カテゴリ"},
-                    "key": {"type": "string", "description": "取り出すキー"}
-                },
-                "required": ["category", "key"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "log_event",
-            "description": "配信中の出来事を記録する",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "event_type": {"type": "string", "description": "イベントタイプ"},
-                    "description": {"type": "string", "description": "出来事の説明"}
-                },
-                "required": ["event_type", "description"]
-            }
-        }
-    }
-]
+MODE_INSTRUCTIONS = {
+    "chat": (
+        "【モード: 雑談】\n"
+        "視聴者と自由に雑談する場です。\n"
+        "- 視聴者のコメントに自然に返答する\n"
+        "- 話題は自由（ゲーム・アニメ・日常など）\n"
+        "- ゲームプレイやゲーム制作の話題は軽く流す"
+    ),
+    "game": (
+        "【モード: ゲームプレイ実況】\n"
+        "ゲームをプレイしながら実況している場です。\n"
+        "- 今やっているゲームの話題を中心にする\n"
+        "- プレイの感想・攻略・リアクションを話す\n"
+        "- 関係のない長話はしない\n"
+        "- ゲームに集中した短めの返答を心がける"
+    ),
+    "gamedev": (
+        "【モード: ゲーム制作】\n"
+        "ゲームを制作している作業配信の場です。\n"
+        "- 制作中のゲームについて話す\n"
+        "- プログラミング・デザイン・アイデアの話題が中心\n"
+        "- 視聴者の制作に関する質問や提案には積極的に反応する\n"
+        "- 雑談やゲームプレイの話題は軽く受け流す"
+    ),
+}
 
 
 def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -> str:
-    rules_text = "\n".join(f"- {v}" for v in character.get("rules", {}).values())
     catchphrases = "、".join(character.get("catchphrases", []))
+    mode_instruction = MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS["chat"])
 
     prompt = f"""あなたはAIVTuberの「{character['name']}（{character['name_jp']}）」です。
 
@@ -70,17 +47,16 @@ def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -
 【口癖・決め台詞】
 {catchphrases}
 
-【行動規則】
-{rules_text}
+{mode_instruction}
 
-【現在のモード】
-{mode}
-
-常にキャラクターを保ちながら、自然に返答してください。
-返答は日本語で、200文字以内を目安にしてください。"""
+【重要ルール】
+- 返答は日本語で60文字以内に収めてください
+- 常にキャラクターを保ってください
+- モードに合わない話題は短く流してください
+- 自分から無関係な話題を振らないでください"""
 
     if memory_context:
-        prompt += f"\n\n【記憶・コンテキスト】\n{memory_context}"
+        prompt += f"\n\n【記憶】\n{memory_context}"
 
     return prompt
 
@@ -136,26 +112,6 @@ class AIBrain:
                 import time as _time
                 _time.sleep(1.5 * (attempt + 1))
         return ""
-
-    def _execute_tool_sync(self, name: str, inputs: dict) -> str:
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(self._execute_tool(name, inputs))
-        finally:
-            loop.close()
-
-    async def _execute_tool(self, name: str, inputs: dict) -> str:
-        if name == "remember":
-            await self.memory.remember(inputs["category"], inputs["key"], inputs["value"])
-            return f"記憶しました: {inputs['key']} = {inputs['value']}"
-        elif name == "recall":
-            value = await self.memory.recall(inputs["category"], inputs["key"])
-            return value or "見つかりませんでした"
-        elif name == "log_event":
-            await self.memory.log_event(inputs["event_type"], inputs["description"])
-            return "記録しました"
-        return "不明なツール"
 
     async def commentary(self, screen_image: bytes, game_context: str = "") -> str:
         prompt = game_context or "今やっているゲームについて実況してください。"

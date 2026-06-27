@@ -6,32 +6,21 @@ AITuber - AIVTuber streaming bot
   /stop               OBS配信停止 + 締めの挨拶
   /pause              AI会話を一時停止
   /resume             AI会話を再開
+  /mode chat          モード切替: 雑談
+  /mode game          モード切替: ゲームプレイ実況
+  /mode gamedev       モード切替: ゲーム制作
   /scene <名前>       OBSシーン切り替え
   /say <テキスト>     藍花に喋らせる
 
   [記憶]
   /mem show           全カテゴリの記憶を表示
-  /mem show <カテゴリ> カテゴリの記憶を表示
-  /mem add <カテゴリ> <キー> <値>  記憶を追加
-  /mem del <カテゴリ> <キー>       記憶を削除
+  /mem add <カテゴリ> <キー> <値>
+  /mem del <カテゴリ> <キー>
 
-  [YouTube]
-  /yt private         配信を非公開に変更
-  /yt public          配信を公開に変更
-  /yt unlisted        配信を限定公開に変更
+  [YouTube] /yt setid <ID> | /yt private | /yt public | /yt unlisted
+  [Twitch]  /tw subonly | /tw emoteonly | /tw slow 30 | /tw title タイトル
 
-  [Twitch]
-  /tw subonly         サブスクライバー限定モードON
-  /tw subolyoff       サブスクライバー限定モードOFF
-  /tw emoteonly       エモートのみモードON
-  /tw emoteonlyoff    エモートのみモードOFF
-  /tw slow <秒>       低速モードON
-  /tw slowoff         低速モードOFF
-  /tw title <タイトル>  配信タイトル変更
-  /tw game <ゲーム名>   ゲームカテゴリ変更
-
-  /quit               アプリ終了
-  /help               このヘルプを表示
+  /quit / /help
 """
 import asyncio
 import signal
@@ -55,20 +44,22 @@ HELP_TEXT = """
   /stop               配信停止（締めの挨拶＋OBS停止）
   /pause              AI会話を一時停止
   /resume             AI会話を再開
+
+  [モード切替]
+  /mode chat          雑談モード
+  /mode game          ゲームプレイ実況モード
+  /mode gamedev       ゲーム制作モード
+
   /scene <名前>       OBSシーン切り替え
   /say <テキスト>     藍花に喋らせる
 
   [記憶管理]
   /mem show           全記憶を表示
-  /mem show viewer    viewerカテゴリの記憶を表示
-  /mem add viewer 田中 常連さん  記憶を追加
-  /mem del viewer 田中           記憶を削除
+  /mem add viewer 田中 常連さん
+  /mem del viewer 田中
 
-  [YouTube]
-  /yt private | /yt public | /yt unlisted
-
-  [Twitch]
-  /tw subonly | /tw emoteonly | /tw slow 30 | /tw title タイトル
+  [YouTube] /yt setid <ID> | /yt private | /yt public | /yt unlisted
+  [Twitch]  /tw subonly | /tw emoteonly | /tw slow 30 | /tw title タイトル
 
   /quit / /help
 """
@@ -97,9 +88,14 @@ class AITuber:
         self.twitch = TwitchController() if settings.TWITCH_ENABLED else None
         self._running = False
         self._paused = False
+        self._mode = settings.MODE  # chat / game / gamedev
         self._last_chat_time = time.time()
         self._tasks: list[asyncio.Task] = []
         self.tts.set_obs(self.obs)
+        self.tts.set_subtitle_callbacks(
+            on_start=self._on_tts_start,
+            on_end=self._on_tts_end,
+        )
 
     async def start(self):
         print(f"[AITuber] Starting as {self.character['name']}...")
@@ -185,6 +181,17 @@ class AITuber:
         elif cmd == "/resume":
             self._paused = False
             print("[再開] AI会話を再開しました")
+
+        elif cmd == "/mode":
+            modes = {"chat": "雑談", "game": "ゲームプレイ実況", "gamedev": "ゲーム制作"}
+            if arg in modes:
+                self._mode = arg
+                msg = f"モードを「{modes[arg]}」に切り替えました！"
+                print(f"[モード] {msg}")
+                await self._say(msg)
+            else:
+                print(f"[モード] 使い方: /mode chat | /mode game | /mode gamedev")
+                print(f"[モード] 現在: {self._mode} ({modes.get(self._mode, '不明')})")
 
         elif cmd == "/scene":
             if arg:
@@ -338,7 +345,7 @@ class AITuber:
 
         response = await self.ai.respond(
             msg.text,
-            mode=settings.MODE,
+            mode=self._mode,
             username=msg.username,
         )
         if response:
@@ -358,17 +365,18 @@ class AITuber:
             print(f"[Commentary] {response}")
             await self._say(response)
 
-    async def _say(self, text: str):
-        await self.tts.speak(text)
+    async def _on_tts_start(self, text: str):
+        """TTS再生開始と同時に字幕を更新"""
         if self.obs.connected:
             await self.obs.set_text_source("SubtitleText", text)
-            # 字幕を一定時間後にクリア
-            asyncio.create_task(self._clear_subtitle_after(max(3.0, len(text) / 8.0)))
 
-    async def _clear_subtitle_after(self, delay: float):
-        await asyncio.sleep(delay)
+    async def _on_tts_end(self):
+        """TTS再生終了後に字幕をクリア"""
         if self.obs.connected:
             await self.obs.clear_text_source("SubtitleText")
+
+    async def _say(self, text: str):
+        await self.tts.speak(text)
 
     async def stop(self):
         print("[AITuber] Stopping...")
