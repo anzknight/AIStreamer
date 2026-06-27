@@ -3,6 +3,9 @@ import edge_tts
 from pathlib import Path
 from config.settings import settings
 
+# Sentinel to signal the worker to stop
+_STOP = object()
+
 
 class TTSEngine:
     def __init__(self, character: dict):
@@ -14,7 +17,6 @@ class TTSEngine:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.last_file: Path | None = None
         self._queue: asyncio.Queue = asyncio.Queue()
-        self._stop = False
         self._current_proc: asyncio.subprocess.Process | None = None
         self._worker_task: asyncio.Task | None = None
         self._obs = None
@@ -28,7 +30,8 @@ class TTSEngine:
         self._on_speak_start = on_start
         self._on_speak_end = on_end
 
-    def _clear_queue(self):
+    def _drain_queue(self):
+        """キューに溜まっているアイテムをすべて捨てる"""
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
@@ -37,15 +40,16 @@ class TTSEngine:
 
     async def reset(self):
         """音声を完全リセット（再生中の音声も停止）"""
-        self._stop = True
-        self._clear_queue()
+        # Stop sentinel to break the worker loop
+        await self._queue.put(_STOP)
+        self._drain_queue()
 
-        # Cancel the worker task
+        # Cancel the worker task and wait for it to finish
         if self._worker_task and not self._worker_task.done():
             self._worker_task.cancel()
             try:
-                await asyncio.wait_for(asyncio.shield(self._worker_task), timeout=0.5)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
+                await self._worker_task
+            except (asyncio.CancelledError, Exception):
                 pass
         self._worker_task = None
 
@@ -58,7 +62,6 @@ class TTSEngine:
                 pass
         self._current_proc = None
 
-        self._stop = False
         print("[TTS] リセットしました")
 
     async def speak(self, text: str, wait: bool = False):
@@ -68,58 +71,65 @@ class TTSEngine:
                 await self._on_speak_start(text)
             return
 
-        # Drop backlog if too many queued
+        # キューが2件以上溜まっていたら古いものを捨てて最新だけ残す
         if self._queue.qsize() >= 2:
-            self._clear_queue()
+            self._drain_queue()
 
         await self._queue.put(text)
 
-        # Start worker only if none is running
+        # ワーカーが停止していれば（re）起動する
         if self._worker_task is None or self._worker_task.done():
             if wait:
-                await self._worker()
+                await self._run_worker()
             else:
-                self._worker_task = asyncio.create_task(self._worker())
+                self._worker_task = asyncio.create_task(self._run_worker())
 
-    async def _worker(self):
-        while not self._queue.empty() and not self._stop:
-            try:
-                text = self._queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            if self._stop:
-                break
-            await self._synthesize_and_play(text)
+    async def _run_worker(self):
+        """
+        永続ワーカー。キューをブロッキングで待ち続け、
+        キャンセルされるかSTOPセンチネルが来るまで動き続ける。
+        """
+        try:
+            while True:
+                item = await self._queue.get()
+                if item is _STOP:
+                    break
+                await self._synthesize_and_play(item)
+        except asyncio.CancelledError:
+            pass
 
     async def _synthesize_and_play(self, text: str):
-        if self._stop:
-            return
         output_file = self.output_dir / "speech.mp3"
         try:
             communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, pitch=self.pitch)
             await communicate.save(str(output_file))
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             print(f"[TTS] 音声合成エラー: {e}")
             return
         self.last_file = output_file
 
-        if self._stop:
-            return
-
-        # Subtitle on
+        # 字幕ON（音声再生直前）
         if self._on_speak_start:
             await self._on_speak_start(text)
 
-        if self._obs and self._obs.connected and settings.OBS_AUDIO_SOURCE:
-            await self._obs.play_audio_source(settings.OBS_AUDIO_SOURCE, output_file)
-            estimated_secs = max(2.0, len(text) / 8.0)
-            await asyncio.sleep(estimated_secs)
-        else:
-            await self._play_local(output_file)
-
-        # Subtitle off
-        if self._on_speak_end:
-            await self._on_speak_end()
+        try:
+            if self._obs and self._obs.connected and settings.OBS_AUDIO_SOURCE:
+                await self._obs.play_audio_source(settings.OBS_AUDIO_SOURCE, output_file)
+                estimated_secs = max(2.0, len(text) / 5.0)  # 日本語は約5文字/秒
+                await asyncio.sleep(estimated_secs)
+            else:
+                await self._play_local(output_file)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            # 字幕OFF（再生終了後 or キャンセル時も必ずクリア）
+            if self._on_speak_end:
+                try:
+                    await self._on_speak_end()
+                except Exception:
+                    pass
 
     async def _play_local(self, file_path: Path):
         for player, args in [
@@ -133,8 +143,13 @@ class TTSEngine:
                     stderr=asyncio.subprocess.DEVNULL,
                 )
                 self._current_proc = proc
-                await proc.wait()
-                self._current_proc = None
+                try:
+                    await proc.wait()
+                except asyncio.CancelledError:
+                    proc.terminate()
+                    raise
+                finally:
+                    self._current_proc = None
                 return
             except FileNotFoundError:
                 continue
