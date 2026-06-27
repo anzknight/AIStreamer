@@ -134,6 +134,16 @@ class TTSEngine:
                     pass
 
     async def _play_local(self, file_path: Path):
+        """pygameでMP3を再生（外部ツール不要・Windows対応）"""
+        try:
+            import pygame
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._pygame_play, file_path)
+            return
+        except ImportError:
+            pass
+
+        # pygameがない場合はffplay/mpg123にフォールバック
         for player, args in [
             ("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet"]),
             ("mpg123", ["-q"]),
@@ -156,3 +166,14 @@ class TTSEngine:
             except FileNotFoundError:
                 continue
         print(f"[TTS] Audio player not found. File: {file_path}")
+
+    def _pygame_play(self, file_path: Path):
+        """同期でpygame再生（executor内で実行）"""
+        import pygame
+        import time
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        pygame.mixer.music.load(str(file_path))
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            time.sleep(0.05)
