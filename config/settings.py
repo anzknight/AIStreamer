@@ -23,6 +23,7 @@ class Settings:
     # TTS
     TTS_OUTPUT_DIR: Path = BASE_DIR / "data" / "tts_output"
     TTS_ENABLED: bool = os.getenv("TTS_ENABLED", "true").lower() == "true"
+    TTS_PAUSE_BETWEEN: float = float(os.getenv("TTS_PAUSE_BETWEEN", "0.5"))  # 発話間の空白（秒）
 
     # Screen Capture
     SCREEN_CAPTURE_ENABLED: bool = os.getenv("SCREEN_CAPTURE_ENABLED", "false").lower() == "true"

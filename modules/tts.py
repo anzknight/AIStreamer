@@ -95,6 +95,8 @@ class TTSEngine:
                 if item is _STOP:
                     break
                 await self._synthesize_and_play(item)
+                if settings.TTS_PAUSE_BETWEEN > 0:
+                    await asyncio.sleep(settings.TTS_PAUSE_BETWEEN)
         except asyncio.CancelledError:
             pass
 
