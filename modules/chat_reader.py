@@ -57,11 +57,12 @@ class YouTubeChatReader:
                     for item in chat.get().sync_items():
                         await callback(ChatMessage("youtube", item.author.name, item.message))
                     await asyncio.sleep(1)
-                print("[YouTube Chat] 配信が終了しました")
-                break
+                print("[YouTube Chat] 配信が終了または切断されました。30秒後に再接続します...")
+                await asyncio.sleep(30)
+                print(f"[YouTube Chat] 再接続中: {self._video_id}")
             except Exception as e:
-                print(f"[YouTube Chat] Error: {e}")
-                await asyncio.sleep(5)
+                print(f"[YouTube Chat] Error: {e} → 10秒後に再接続します")
+                await asyncio.sleep(10)
 
 
 class TwitchChatReader:
