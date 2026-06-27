@@ -60,7 +60,7 @@ class OBSController:
                     "local_file": str(file_path),
                     "is_local_file": True,
                     "looping": False,
-                    "restart_on_activate": True,
+                    "restart_on_activate": False,  # シーン切替・配信開始で勝手に再生しない
                 },
                 overlay=True
             )
@@ -68,6 +68,15 @@ class OBSController:
             self._ws.trigger_media_input_action(source_name, "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART")
         except Exception as e:
             print(f"[OBS] play_audio_source error: {e}")
+
+    async def stop_audio_source(self, source_name: str):
+        """メディアソースを停止（再生終了後に呼ぶことで次の自動再生を防ぐ）"""
+        if not self.connected or not self._ws:
+            return
+        try:
+            self._ws.trigger_media_input_action(source_name, "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP")
+        except Exception as e:
+            print(f"[OBS] stop_audio_source error: {e}")
 
     async def clear_text_source(self, source_name: str):
         """字幕をクリア"""

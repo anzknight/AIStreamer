@@ -119,6 +119,8 @@ class TTSEngine:
                 await self._obs.play_audio_source(settings.OBS_AUDIO_SOURCE, output_file)
                 estimated_secs = max(2.0, len(text) / 5.0)  # 日本語は約5文字/秒
                 await asyncio.sleep(estimated_secs)
+                # 再生完了後にOBSメディアソースを停止（次回の自動再生防止）
+                await self._obs.stop_audio_source(settings.OBS_AUDIO_SOURCE)
             else:
                 await self._play_local(output_file)
         except asyncio.CancelledError:
