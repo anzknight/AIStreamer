@@ -112,6 +112,7 @@ class AITuber:
         yt_reader = get_youtube_reader()
         if yt_reader:
             yt_reader.set_obs(self.obs)
+            yt_reader.set_on_stream_end(self._on_stream_end)
         tasks = [asyncio.create_task(r.read(self._on_chat_message)) for r in readers]
         tasks.append(asyncio.create_task(self._command_loop()))
 
@@ -369,6 +370,13 @@ class AITuber:
         if response:
             print(f"[Commentary] {response}")
             await self._say(response)
+
+    async def _on_stream_end(self):
+        """YouTube配信終了時に音声・字幕を完全リセット"""
+        await self.tts.reset()
+        if self.obs.connected:
+            await self.obs.clear_text_source("SubtitleText")
+        print("[AITuber] 配信終了を検知 → 音声・字幕をリセットしました")
 
     async def _on_tts_start(self, text: str):
         """TTS再生開始と同時に字幕を更新"""

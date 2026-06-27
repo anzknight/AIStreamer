@@ -15,13 +15,18 @@ class YouTubeChatReader:
         self._video_id: str | None = settings.YOUTUBE_VIDEO_ID or None
         self._chat = None
         self._obs = None
+        self._on_stream_end = None
 
     def set_video_id(self, video_id: str):
         self._video_id = video_id
-        self._chat = None  # リセットして再接続
+        self._chat = None
+        self._on_stream_end = None
 
     def set_obs(self, obs_controller):
         self._obs = obs_controller
+
+    def set_on_stream_end(self, callback):
+        self._on_stream_end = callback
 
     async def _auto_detect_video_id(self) -> str | None:
         """YouTube APIでアクティブな配信IDを自動取得"""
@@ -71,7 +76,9 @@ class YouTubeChatReader:
                         await callback(ChatMessage("youtube", item.author.name, item.message))
                     await asyncio.sleep(1)
                 print("[YouTube Chat] 配信が終了しました。30秒後に再接続します...")
-                self._video_id = None  # 次のループでIDを再取得
+                self._video_id = None
+                if self._on_stream_end:
+                    await self._on_stream_end()
                 await asyncio.sleep(30)
             except Exception as e:
                 print(f"[YouTube Chat] Error: {e} → 10秒後に再接続します")

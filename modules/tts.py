@@ -15,6 +15,8 @@ class TTSEngine:
         self.last_file: Path | None = None
         self._queue: asyncio.Queue = asyncio.Queue()
         self._playing = False
+        self._stop = False
+        self._current_proc: asyncio.subprocess.Process | None = None
         self._obs = None
         self._on_speak_start = None  # 再生開始時のコールバック（字幕同期用）
         self._on_speak_end = None    # 再生終了時のコールバック（字幕クリア用）
@@ -35,6 +37,21 @@ class TTSEngine:
             except Exception:
                 break
 
+    async def reset(self):
+        """音声を完全リセット（再生中の音声も停止）"""
+        self._stop = True
+        self.clear_queue()
+        # 再生中のプロセスを強制終了
+        if self._current_proc and self._current_proc.returncode is None:
+            try:
+                self._current_proc.terminate()
+                await asyncio.sleep(0.2)
+            except Exception:
+                pass
+        self._playing = False
+        self._stop = False
+        print("[TTS] リセットしました")
+
     async def speak(self, text: str, wait: bool = False):
         if not settings.TTS_ENABLED:
             print(f"[TTS] {text}")
@@ -53,9 +70,10 @@ class TTSEngine:
 
     async def _process_queue(self):
         self._playing = True
-        while not self._queue.empty():
+        while not self._queue.empty() and not self._stop:
             text = await self._queue.get()
-            await self._synthesize_and_play(text)
+            if not self._stop:
+                await self._synthesize_and_play(text)
         self._playing = False
 
     async def _synthesize_and_play(self, text: str):
@@ -86,7 +104,9 @@ class TTSEngine:
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
+            self._current_proc = proc
             await proc.wait()
+            self._current_proc = None
         except FileNotFoundError:
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -94,6 +114,8 @@ class TTSEngine:
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
+                self._current_proc = proc
                 await proc.wait()
+                self._current_proc = None
             except FileNotFoundError:
                 print(f"[TTS] Audio player not found. File: {file_path}")
