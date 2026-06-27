@@ -24,15 +24,7 @@ class YouTubeChatReader:
         self._obs = obs_controller
 
     async def _auto_detect_video_id(self) -> str | None:
-        """OBS経由でYouTube動画IDを自動取得"""
-        # 1. OBSのストリーム設定から取得を試みる
-        if self._obs and self._obs.connected:
-            vid = self._obs.get_youtube_video_id()
-            if vid:
-                print(f"[YouTube Chat] OBSから動画IDを取得: {vid}")
-                return vid
-
-        # 2. YouTube APIで取得を試みる
+        """YouTube APIでアクティブな配信IDを自動取得"""
         try:
             from modules.youtube_controller import YouTubeController
             yt = YouTubeController()
@@ -43,7 +35,6 @@ class YouTubeChatReader:
                     return bid
         except Exception as e:
             print(f"[YouTube Chat] YouTube API自動取得失敗: {e}")
-
         return None
 
     async def read(self, callback):
