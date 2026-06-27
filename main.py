@@ -44,7 +44,7 @@ from core.ai_brain import AIBrain
 from core.rules import RuleEngine
 from modules.tts import TTSEngine
 from modules.screen_capture import ScreenCapture
-from modules.chat_reader import create_chat_readers, ChatMessage
+from modules.chat_reader import create_chat_readers, ChatMessage, get_youtube_reader
 from modules.obs_controller import OBSController
 from modules.youtube_controller import YouTubeController
 from modules.twitch_controller import TwitchController
@@ -265,14 +265,28 @@ class AITuber:
             print("[記憶] 使い方: /mem show | /mem add <カテゴリ> <キー> <値> | /mem del <カテゴリ> <キー>")
 
     async def _handle_youtube_command(self, arg: str):
-        if not self.youtube:
-            print("[YouTube] YOUTUBE_CONTROLLER_ENABLED=true を.envに設定してください")
-            return
-        sub = arg.strip().lower()
-        if sub in ("private", "public", "unlisted"):
+        parts = arg.strip().split(maxsplit=1)
+        sub = parts[0].lower() if parts else ""
+        sub_arg = parts[1] if len(parts) > 1 else ""
+
+        if sub == "setid":
+            if sub_arg:
+                reader = get_youtube_reader()
+                if reader:
+                    reader.set_video_id(sub_arg)
+                    print(f"[YouTube] 動画IDを設定しました: {sub_arg}")
+                    print("[YouTube] チャット読み取りを再接続するにはアプリを再起動してください")
+                else:
+                    print("[YouTube] YOUTUBE_ENABLED=true を.envに設定してください")
+            else:
+                print("[YouTube] 使い方: /yt setid <動画ID>")
+        elif sub in ("private", "public", "unlisted"):
+            if not self.youtube:
+                print("[YouTube] YOUTUBE_CONTROLLER_ENABLED=true を.envに設定してください")
+                return
             await self.youtube.set_privacy(sub)
         else:
-            print("[YouTube] 使い方: /yt private | /yt public | /yt unlisted")
+            print("[YouTube] 使い方: /yt setid <動画ID> | /yt private | /yt public | /yt unlisted")
 
     async def _handle_twitch_command(self, arg: str):
         if not self.twitch:
