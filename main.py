@@ -336,7 +336,7 @@ class AITuber:
             print("[Twitch] /help でコマンド一覧を確認してください")
 
     async def _on_chat_message(self, msg: ChatMessage):
-        if not self._running or self._paused:
+        if not self._running or self._paused or self._mode == "video":
             return
 
         self._last_chat_time = time.time()
