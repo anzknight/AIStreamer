@@ -1,5 +1,7 @@
 import asyncio
 import edge_tts
+import json
+import time
 from pathlib import Path
 from config.settings import settings
 
@@ -19,6 +21,8 @@ class TTSEngine:
         if settings.SAVE_AUDIO_FILES:
             self._audio_save_dir.mkdir(parents=True, exist_ok=True)
         self._clip_counter = 0
+        self._session_start: float | None = None
+        self._timeline: list = []  # [{clip, offset_sec, text}, ...]
         self.last_file: Path | None = None
         self._queue: asyncio.Queue = asyncio.Queue()
         self._current_proc: asyncio.subprocess.Process | None = None
@@ -116,13 +120,27 @@ class TTSEngine:
             return
         self.last_file = output_file
 
-        # 連番保存（動画制作用）
+        # 連番保存 + タイムライン記録（動画制作用）
         if settings.SAVE_AUDIO_FILES:
+            if self._session_start is None:
+                self._session_start = time.time()
             self._clip_counter += 1
             import shutil
             save_path = self._audio_save_dir / f"clip_{self._clip_counter:04d}.mp3"
             shutil.copy2(str(output_file), str(save_path))
-            print(f"[TTS] 保存: {save_path.name}")
+            offset = time.time() - self._session_start
+            self._timeline.append({
+                "clip": save_path.name,
+                "offset_sec": round(offset, 2),
+                "text": text,
+            })
+            # タイムラインをJSONで随時保存
+            timeline_path = self._audio_save_dir / "timeline.json"
+            timeline_path.write_text(
+                json.dumps(self._timeline, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+            print(f"[TTS] 保存: {save_path.name}  ({offset:.1f}秒)")
 
         # 字幕ON（音声再生直前）
         if self._on_speak_start:
