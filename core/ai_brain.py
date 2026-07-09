@@ -148,5 +148,44 @@ class AIBrain:
         return ""
 
     async def commentary(self, screen_image: bytes, game_context: str = "") -> str:
-        prompt = game_context or "今やっているゲームについて実況してください。"
-        return await self.respond(prompt, mode="game")
+        """画面画像を実際にAIに見せて実況コメントを生成する"""
+        import base64
+        system = _build_system_prompt(self.character, settings.MODE)
+        image_b64 = base64.b64encode(screen_image).decode("utf-8")
+        prompt = game_context or "この画面を見て、今起きていることを実況してください。"
+
+        messages = [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            },
+        ]
+
+        response_text = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: self._run_vision(messages)
+        )
+        return response_text
+
+    def _run_vision(self, messages: list) -> str:
+        for attempt in range(3):
+            try:
+                response = self.client.chat.completions.create(
+                    model=settings.VISION_MODEL,
+                    messages=messages,
+                    max_tokens=200,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                if attempt == 2:
+                    print(f"[AI] 画面実況に失敗しました: {e}")
+                    return ""
+                import time as _time
+                _time.sleep(1.5 * (attempt + 1))
+        return ""

@@ -11,6 +11,7 @@ class Settings:
     # Groq
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     AI_MODEL: str = os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
+    VISION_MODEL: str = os.getenv("VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
     # Character
     CHARACTER_FILE: Path = BASE_DIR / "config" / "character.json"
