@@ -64,6 +64,7 @@ class Settings:
 
     # Knowledge base
     KNOWLEDGE_FILE: Path = BASE_DIR / "config" / "knowledge.md"
+    GAMES_DIR: Path = BASE_DIR / "config" / "games"
 
     # Stream delay compensation (seconds) - 画面キャプチャ後に発話を遅らせる
     STREAM_DELAY: float = float(os.getenv("STREAM_DELAY", "0.0"))

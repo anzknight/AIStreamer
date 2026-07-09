@@ -42,16 +42,24 @@ MODE_INSTRUCTIONS = {
 
 
 def _load_knowledge() -> str:
-    """config/knowledge.md を読み込んで返す"""
+    """現在のゲーム知識 + 共通knowledge.md を読み込んで返す"""
+    parts = []
     try:
+        # 現在選択中のゲームファイル
+        current = settings.GAMES_DIR / "_current.txt"
+        if current.exists():
+            game_name = current.read_text(encoding="utf-8").strip()
+            game_file = settings.GAMES_DIR / f"{game_name}.md"
+            if game_file.exists():
+                parts.append(game_file.read_text(encoding="utf-8").strip())
+        # 共通knowledge.md
         if settings.KNOWLEDGE_FILE.exists():
             text = settings.KNOWLEDGE_FILE.read_text(encoding="utf-8").strip()
-            # コメント行（#で始まる見出し）と空の例だけなら無視
             if text and "（ここに書く）" not in text:
-                return text
+                parts.append(text)
     except Exception:
         pass
-    return ""
+    return "\n\n".join(parts)
 
 
 def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -> str:

@@ -222,6 +222,9 @@ class AITuber:
         elif cmd == "/tw":
             await self._handle_twitch_command(arg)
 
+        elif cmd == "/game":
+            await self._handle_game_command(arg)
+
         elif cmd == "/know":
             if arg == "show":
                 text = settings.KNOWLEDGE_FILE.read_text(encoding="utf-8") if settings.KNOWLEDGE_FILE.exists() else "（未設定）"
@@ -249,6 +252,61 @@ class AITuber:
 
         else:
             print(f"[不明なコマンド] {cmd}  /help でコマンド一覧を表示")
+
+    async def _handle_game_command(self, arg: str):
+        parts = arg.strip().split(maxsplit=1)
+        sub = parts[0].lower() if parts else ""
+        sub_arg = parts[1] if len(parts) > 1 else ""
+        games_dir = settings.GAMES_DIR
+        games_dir.mkdir(parents=True, exist_ok=True)
+        current_file = games_dir / "_current.txt"
+
+        if sub == "list":
+            files = [f.stem for f in games_dir.glob("*.md") if not f.stem.startswith("example_")]
+            current = current_file.read_text(encoding="utf-8").strip() if current_file.exists() else ""
+            if files:
+                print("\n[ゲーム知識一覧]")
+                for f in files:
+                    mark = " ← 現在" if f == current else ""
+                    print(f"  {f}{mark}")
+            else:
+                print("[ゲーム] 登録されたゲームがありません")
+                print(f"[ゲーム] {games_dir} に <ゲーム名>.md を作成してください")
+
+        elif sub == "load":
+            if not sub_arg:
+                print("[ゲーム] 使い方: /game load <ゲーム名>")
+                return
+            game_file = games_dir / f"{sub_arg}.md"
+            if game_file.exists():
+                current_file.write_text(sub_arg, encoding="utf-8")
+                print(f"[ゲーム] 「{sub_arg}」の知識を読み込みました")
+                msg = f"よし！{sub_arg}をやっていくよ！"
+                await self._say(msg)
+            else:
+                print(f"[ゲーム] {game_file} が見つかりません")
+                print(f"[ゲーム] /game list で一覧を確認してください")
+
+        elif sub == "show":
+            current = current_file.read_text(encoding="utf-8").strip() if current_file.exists() else ""
+            if current:
+                game_file = games_dir / f"{current}.md"
+                text = game_file.read_text(encoding="utf-8") if game_file.exists() else "（ファイルなし）"
+                print(f"\n[ゲーム知識: {current}]\n{text}")
+            else:
+                print("[ゲーム] ゲームが選択されていません。/game load <名前> で選択してください")
+
+        elif sub == "clear":
+            if current_file.exists():
+                current_file.unlink()
+            print("[ゲーム] ゲーム知識をクリアしました")
+
+        else:
+            print("[ゲーム] 使い方:")
+            print("  /game list              → 登録済みゲーム一覧")
+            print("  /game load <ゲーム名>   → ゲームを選択")
+            print("  /game show              → 現在の知識を表示")
+            print("  /game clear             → 選択解除")
 
     async def _handle_memory_command(self, arg: str):
         parts = arg.strip().split(maxsplit=3)
