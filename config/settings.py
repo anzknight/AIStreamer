@@ -62,6 +62,12 @@ class Settings:
     SAVE_AUDIO_FILES: bool = os.getenv("SAVE_AUDIO_FILES", "false").lower() == "true"
     AUDIO_SAVE_DIR: Path = BASE_DIR / "data" / "audio_clips"
 
+    # Knowledge base
+    KNOWLEDGE_FILE: Path = BASE_DIR / "config" / "knowledge.md"
+
+    # Stream delay compensation (seconds) - 画面キャプチャ後に発話を遅らせる
+    STREAM_DELAY: float = float(os.getenv("STREAM_DELAY", "0.0"))
+
     @classmethod
     def load_character(cls) -> dict:
         with open(cls.CHARACTER_FILE, encoding="utf-8") as f:

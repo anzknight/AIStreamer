@@ -41,9 +41,23 @@ MODE_INSTRUCTIONS = {
 }
 
 
+def _load_knowledge() -> str:
+    """config/knowledge.md を読み込んで返す"""
+    try:
+        if settings.KNOWLEDGE_FILE.exists():
+            text = settings.KNOWLEDGE_FILE.read_text(encoding="utf-8").strip()
+            # コメント行（#で始まる見出し）と空の例だけなら無視
+            if text and "（ここに書く）" not in text:
+                return text
+    except Exception:
+        pass
+    return ""
+
+
 def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -> str:
     catchphrases = "、".join(character.get("catchphrases", []))
     mode_instruction = MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS["chat"])
+    knowledge = _load_knowledge()
 
     prompt = f"""あなたはAIVTuberの「{character['name']}（{character['name_jp']}）」です。
 
@@ -63,6 +77,9 @@ def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -
 - 常にキャラクターを保ってください
 - モードに合わない話題は短く流してください
 - 自分から無関係な話題を振らないでください"""
+
+    if knowledge:
+        prompt += f"\n\n【事前知識】\n{knowledge}"
 
     if memory_context:
         prompt += f"\n\n【記憶】\n{memory_context}"

@@ -222,6 +222,24 @@ class AITuber:
         elif cmd == "/tw":
             await self._handle_twitch_command(arg)
 
+        elif cmd == "/know":
+            if arg == "show":
+                text = settings.KNOWLEDGE_FILE.read_text(encoding="utf-8") if settings.KNOWLEDGE_FILE.exists() else "（未設定）"
+                print(f"\n[事前知識]\n{text}")
+            elif arg == "reload":
+                print("[事前知識] リロードしました（次の返答から反映）")
+            else:
+                print("[事前知識] 使い方: /know show | /know reload")
+                print(f"[事前知識] ファイル: {settings.KNOWLEDGE_FILE}")
+
+        elif cmd == "/delay":
+            if arg.replace(".", "").isdigit():
+                import config.settings as _s
+                _s.settings.STREAM_DELAY = float(arg)
+                print(f"[配信遅延補正] {float(arg)}秒に設定しました")
+            else:
+                print(f"[配信遅延補正] 現在: {settings.STREAM_DELAY}秒  使い方: /delay 10")
+
         elif cmd == "/quit":
             await self.stop()
             sys.exit(0)
@@ -369,6 +387,8 @@ class AITuber:
         response = await self.ai.commentary(image)
         if response:
             print(f"[Commentary] {response}")
+            if settings.STREAM_DELAY > 0:
+                await asyncio.sleep(settings.STREAM_DELAY)
             await self._say(response)
 
     async def _on_stream_end(self):
