@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AITuber コントロールパネル</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+
+  header {
+    background: #1a1a2e; padding: 16px 24px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 2px solid #7c3aed;
+  }
+  header h1 { font-size: 1.3rem; color: #a78bfa; }
+  #status-badge {
+    margin-left: auto; padding: 4px 12px; border-radius: 20px;
+    font-size: 0.8rem; font-weight: bold;
+    background: #374151; color: #9ca3af;
+  }
+  #status-badge.running { background: #065f46; color: #6ee7b7; }
+  #status-badge.paused  { background: #78350f; color: #fcd34d; }
+
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px; }
+
+  .card {
+    background: #1a1a2e; border-radius: 12px; padding: 20px;
+    border: 1px solid #2d2d4e;
+  }
+  .card h2 { font-size: 0.85rem; color: #7c3aed; text-transform: uppercase;
+              letter-spacing: 0.05em; margin-bottom: 14px; }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  button {
+    padding: 10px 20px; border: none; border-radius: 8px;
+    font-size: 0.95rem; cursor: pointer; font-weight: 600;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  button:hover { opacity: 0.85; }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .btn-green  { background: #059669; color: #fff; }
+  .btn-red    { background: #dc2626; color: #fff; }
+  .btn-yellow { background: #d97706; color: #fff; }
+  .btn-blue   { background: #2563eb; color: #fff; }
+  .btn-purple { background: #7c3aed; color: #fff; }
+  .btn-gray   { background: #374151; color: #e0e0e0; }
+  .btn-mode   { background: #1e3a5f; color: #93c5fd; border: 1px solid #2563eb; }
+  .btn-mode.active { background: #2563eb; color: #fff; }
+
+  .say-row { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; padding: 10px 14px; border-radius: 8px;
+    background: #0f0f1a; border: 1px solid #374151;
+    color: #e0e0e0; font-size: 0.95rem;
+  }
+  input[type=text]:focus { outline: none; border-color: #7c3aed; }
+
+  #game-select {
+    padding: 10px 14px; border-radius: 8px; background: #0f0f1a;
+    border: 1px solid #374151; color: #e0e0e0; font-size: 0.95rem;
+    flex: 1;
+  }
+
+  #log {
+    background: #070710; border-radius: 8px; padding: 14px;
+    height: 280px; overflow-y: auto; font-family: monospace;
+    font-size: 0.82rem; line-height: 1.6; border: 1px solid #1e1e3a;
+  }
+  .log-line { padding: 1px 0; }
+  .log-line.ai     { color: #a78bfa; }
+  .log-line.chat   { color: #34d399; }
+  .log-line.tts    { color: #60a5fa; }
+  .log-line.error  { color: #f87171; }
+  .log-line.info   { color: #9ca3af; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:1.5rem">🎮</span>
+  <h1>AITuber コントロールパネル</h1>
+  <div id="status-badge">読み込み中...</div>
+</header>
+
+<main>
+
+  <!-- 配信コントロール -->
+  <div class="card">
+    <h2>配信コントロール</h2>
+    <div class="btn-row">
+      <button class="btn-green" onclick="api('start')">▶ 配信開始</button>
+      <button class="btn-red"   onclick="api('stop')">■ 配信停止</button>
+      <button class="btn-yellow" id="btn-pause" onclick="togglePause()">⏸ 一時停止</button>
+    </div>
+  </div>
+
+  <div class="grid2">
+
+    <!-- モード切替 -->
+    <div class="card">
+      <h2>モード切替</h2>
+      <div class="btn-row">
+        <button class="btn-mode" id="mode-chat"    onclick="setMode('chat')">💬 雑談</button>
+        <button class="btn-mode" id="mode-game"    onclick="setMode('game')">🎮 ゲーム実況</button>
+        <button class="btn-mode" id="mode-gamedev" onclick="setMode('gamedev')">🛠 ゲーム制作</button>
+        <button class="btn-mode" id="mode-video"   onclick="setMode('video')">🎬 動画実況</button>
+      </div>
+    </div>
+
+    <!-- ゲーム選択 -->
+    <div class="card">
+      <h2>ゲーム知識</h2>
+      <div class="btn-row">
+        <select id="game-select"></select>
+        <button class="btn-purple" onclick="loadGame()">読み込む</button>
+        <button class="btn-gray"   onclick="api('game/clear')">クリア</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 手動発言 -->
+  <div class="card">
+    <h2>手動発言</h2>
+    <div class="say-row">
+      <input type="text" id="say-input" placeholder="藍花に喋らせるセリフを入力..." onkeydown="if(event.key==='Enter')say()">
+      <button class="btn-blue" onclick="say()">🗣 発言</button>
+    </div>
+  </div>
+
+  <!-- ログ -->
+  <div class="card">
+    <h2>ログ <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（リアルタイム）</span></h2>
+    <div id="log"></div>
+  </div>
+
+</main>
+
+<script>
+let paused = false;
+let currentMode = 'chat';
+
+async function api(path, body) {
+  const res = await fetch('/api/' + path, {
+    method: body !== undefined ? 'POST' : (path.startsWith('game') && !path.includes('/') ? 'GET' : 'POST'),
+    headers: body ? {'Content-Type':'application/json'} : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+async function togglePause() {
+  if (paused) {
+    await api('resume');
+  } else {
+    await api('pause');
+  }
+  loadStatus();
+}
+
+async function setMode(mode) {
+  await api('mode/' + mode);
+  loadStatus();
+}
+
+async function say() {
+  const text = document.getElementById('say-input').value.trim();
+  if (!text) return;
+  await api('say', {text});
+  document.getElementById('say-input').value = '';
+}
+
+async function loadGame() {
+  const sel = document.getElementById('game-select');
+  const name = sel.value;
+  if (!name) return;
+  await fetch('/api/game/' + name, {method:'POST'});
+  loadStatus();
+}
+
+async function loadStatus() {
+  const s = await fetch('/api/status').then(r=>r.json());
+  const badge = document.getElementById('status-badge');
+  paused = s.paused;
+  currentMode = s.mode;
+
+  if (s.paused) {
+    badge.textContent = '⏸ 一時停止中';
+    badge.className = 'paused';
+    document.getElementById('btn-pause').textContent = '▶ 再開';
+  } else if (s.running) {
+    badge.textContent = '● 動作中';
+    badge.className = 'running';
+    document.getElementById('btn-pause').textContent = '⏸ 一時停止';
+  } else {
+    badge.textContent = '停止中';
+    badge.className = '';
+  }
+
+  ['chat','game','gamedev','video'].forEach(m => {
+    document.getElementById('mode-' + m).classList.toggle('active', m === s.mode);
+  });
+}
+
+async function loadGames() {
+  const data = await fetch('/api/games').then(r=>r.json());
+  const sel = document.getElementById('game-select');
+  sel.innerHTML = '<option value="">-- ゲームを選択 --</option>';
+  data.games.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g;
+    opt.textContent = g;
+    if (g === data.current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function addLog(text) {
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  if (text.includes('[AI]'))        div.classList.add('ai');
+  else if (text.includes('[Chat]')) div.classList.add('chat');
+  else if (text.includes('[TTS]'))  div.classList.add('tts');
+  else if (text.includes('エラー') || text.includes('Error')) div.classList.add('error');
+  else div.classList.add('info');
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  // 最大300行
+  while (log.children.length > 300) log.removeChild(log.firstChild);
+}
+
+// WebSocket でログ受信
+function connectWs() {
+  const ws = new WebSocket('ws://' + location.host + '/ws/logs');
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'log') addLog(d.text);
+  };
+  ws.onclose = () => setTimeout(connectWs, 2000);
+}
+
+// 初期化
+loadStatus();
+loadGames();
+connectWs();
+setInterval(loadStatus, 3000);
+</script>
+</body>
+</html>
