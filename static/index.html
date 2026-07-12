@@ -134,6 +134,18 @@
     </div>
   </div>
 
+  <!-- 台本モード -->
+  <div class="card">
+    <h2>台本モード <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（AviUtl2連携 / 動画制作用）</span></h2>
+    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:10px">1行ずつ順番に喋ります。# から始まる行はコメントとして無視されます。</p>
+    <textarea id="script-input" placeholder="# シーン1&#10;こんにちは！今日もゲームやっていくよ！&#10;今日はダンジョン探索だよ、ついてきてね！&#10;# シーン2&#10;やばい、ボスが出てきた！" style="width:100%;height:160px;background:#0f0f1a;border:1px solid #374151;border-radius:8px;padding:12px;color:#e0e0e0;font-size:0.9rem;resize:vertical;font-family:monospace"></textarea>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn-purple" onclick="runScript()">▶ 台本を再生</button>
+      <button class="btn-gray" onclick="document.getElementById('script-input').value=''">クリア</button>
+    </div>
+    <div id="script-status" style="margin-top:8px;font-size:0.82rem;color:#6b7280"></div>
+  </div>
+
   <!-- ログ -->
   <div class="card">
     <h2>ログ <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（リアルタイム）</span></h2>
@@ -174,6 +186,20 @@ async function say() {
   if (!text) return;
   await api('say', {text});
   document.getElementById('say-input').value = '';
+}
+
+async function runScript() {
+  const raw = document.getElementById('script-input').value;
+  const lines = raw.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+  if (!lines.length) return;
+  const status = document.getElementById('script-status');
+  status.textContent = `再生中... (${lines.length}行)`;
+  const res = await fetch('/api/script/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({lines, interval: 0.3}),
+  }).then(r => r.json());
+  status.textContent = res.ok ? `完了！ ${res.results.length}行 再生しました` : `エラー: ${res.error}`;
 }
 
 async function loadGame() {

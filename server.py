@@ -146,6 +146,50 @@ async def say(body: dict):
     return {"ok": True}
 
 
+@app.post("/api/script/say")
+async def script_say(body: dict):
+    """AviUtl2など外部ツールから1行喋らせる（音声ファイルも保存）"""
+    text = body.get("text", "").strip()
+    wait = body.get("wait", False)  # Trueにすると喋り終わるまで待つ
+    if not text:
+        return {"ok": False, "error": "テキストが空です"}
+    # SAVE_AUDIO_FILES を一時的にONにして保存
+    import config.settings as _s
+    orig = _s.settings.SAVE_AUDIO_FILES
+    _s.settings.SAVE_AUDIO_FILES = True
+    _s.settings.AUDIO_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"[台本] {text}")
+    await _aituber.tts.speak(text, wait=wait)
+    _s.settings.SAVE_AUDIO_FILES = orig
+    clip_num = _aituber.tts._clip_counter
+    clip_name = f"clip_{clip_num:04d}.mp3"
+    return {"ok": True, "clip": clip_name}
+
+
+@app.post("/api/script/run")
+async def script_run(body: dict):
+    """台本（複数行）を順番に喋らせる"""
+    lines = body.get("lines", [])
+    interval = body.get("interval", 0.5)  # 行間の待機秒数
+    if not lines:
+        return {"ok": False, "error": "linesが空です"}
+    import config.settings as _s
+    _s.settings.SAVE_AUDIO_FILES = True
+    _s.settings.AUDIO_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    results = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        print(f"[台本] {line}")
+        await _aituber.tts.speak(line, wait=True)
+        clip_name = f"clip_{_aituber.tts._clip_counter:04d}.mp3"
+        results.append({"text": line, "clip": clip_name})
+        if interval > 0:
+            await asyncio.sleep(interval)
+    return {"ok": True, "results": results}
+
+
 @app.get("/api/games")
 async def list_games():
     games_dir = settings.GAMES_DIR
