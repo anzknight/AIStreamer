@@ -136,24 +136,42 @@
 
   <!-- 台本モード -->
   <div class="card">
-    <h2>台本モード <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（AviUtl2連携 / 動画制作用）</span></h2>
-    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:10px">1行ずつ順番に喋ります。# から始まる行はコメントとして無視されます。</p>
-    <textarea id="script-input" placeholder="# シーン1&#10;こんにちは！今日もゲームやっていくよ！&#10;今日はダンジョン探索だよ、ついてきてね！&#10;# シーン2&#10;やばい、ボスが出てきた！" style="width:100%;height:160px;background:#0f0f1a;border:1px solid #374151;border-radius:8px;padding:12px;color:#e0e0e0;font-size:0.9rem;resize:vertical;font-family:monospace"></textarea>
-    <div class="btn-row" style="margin-top:10px">
-      <button class="btn-purple" onclick="runScript()">▶ 台本を再生</button>
-      <button class="btn-gray" onclick="document.getElementById('script-input').value=''">クリア</button>
+    <h2>📝 台本モード <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（セリフを書いて順番に喋らせる）</span></h2>
+
+    <div style="background:#12122a;border-radius:8px;padding:12px;margin-bottom:12px;font-size:0.82rem;color:#9ca3af;line-height:1.7">
+      <b style="color:#a78bfa">使い方：</b><br>
+      ① 下のボックスに喋らせたいセリフを<b>1行に1つ</b>書く<br>
+      ② 「▶ 台本を再生」を押すと上から順番に喋る<br>
+      ③ 音声ファイルは「音声の保存先」フォルダに clip_0001.mp3 のように保存される<br>
+      ④ 保存された音声をAviUtl2などの動画編集ソフトに取り込んで使う<br>
+      <span style="color:#6b7280">※ 行の先頭に # を付けるとメモになり読み上げられません</span>
     </div>
+
+    <textarea id="script-input" placeholder="こんにちは！今日もゲームやっていくよ！&#10;今日はダンジョン探索だよ、ついてきてね！&#10;# ここはメモ（読まれない）&#10;やばい、ボスが出てきた！&#10;なんとか勝てたー！おつかれさま！" style="width:100%;height:160px;background:#0f0f1a;border:1px solid #374151;border-radius:8px;padding:12px;color:#e0e0e0;font-size:0.9rem;resize:vertical;font-family:monospace;line-height:1.8"></textarea>
+
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn-purple" id="script-play-btn" onclick="runScript()">▶ 台本を再生</button>
+      <button class="btn-gray" onclick="document.getElementById('script-input').value='';document.getElementById('script-progress').innerHTML=''">クリア</button>
+    </div>
+
+    <div id="script-progress" style="margin-top:10px"></div>
     <div id="script-status" style="margin-top:8px;font-size:0.82rem;color:#6b7280"></div>
   </div>
 
   <!-- 動画実況 -->
   <div class="card">
-    <h2>動画実況 <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（録画済み動画にAIコメントを付ける）</span></h2>
-    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:10px">
-      動画ファイルのフルパスを入力してください（例: C:\Users\Admin\Videos\録画.mp4）<br>
-      完了後、<code style="color:#a78bfa">python mix_video.py "動画パス"</code> で音声合成できます
-    </p>
-    <div class="say-row" style="margin-bottom:10px">
+    <h2>🎬 動画実況 <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（録画済み動画にAIコメントを付ける）</span></h2>
+
+    <div style="background:#12122a;border-radius:8px;padding:12px;margin-bottom:12px;font-size:0.82rem;color:#9ca3af;line-height:1.7">
+      <b style="color:#a78bfa">使い方：</b><br>
+      ① 「読み込む動画」に録画ファイルのパスを入力（エクスプローラーでファイルを右クリック→「パスのコピー」が便利）<br>
+      ② 間隔を選んで「🎬 実況開始」（10秒ごとがおすすめ）<br>
+      ③ AIが動画を見ながらコメント＋音声を「音声の保存先」に保存<br>
+      ④ 完了後にターミナルで <code style="color:#a78bfa">python mix_video.py "動画パス"</code> を実行すると合成完了
+    </div>
+
+    <label style="font-size:0.8rem;color:#9ca3af">読み込む動画（フルパス）</label>
+    <div class="say-row" style="margin:4px 0 10px">
       <input type="text" id="video-path" placeholder="C:\Users\Admin\Videos\録画.mp4">
       <select id="video-interval" style="padding:10px;border-radius:8px;background:#0f0f1a;border:1px solid #374151;color:#e0e0e0">
         <option value="5">5秒ごと</option>
@@ -167,6 +185,17 @@
       <button class="btn-gray" onclick="fetch('/api/video/stop',{method:'POST'})">停止</button>
     </div>
     <div id="video-status" style="margin-top:10px;font-size:0.85rem;color:#6b7280"></div>
+  </div>
+
+  <!-- 設定 -->
+  <div class="card">
+    <h2>⚙ 設定</h2>
+    <label style="font-size:0.8rem;color:#9ca3af">音声の保存先フォルダ（台本・動画実況の音声がここに保存されます）</label>
+    <div class="say-row" style="margin-top:4px">
+      <input type="text" id="audio-save-dir" placeholder="C:\Users\Admin\Videos\aika_voice">
+      <button class="btn-blue" onclick="saveSettings()">保存</button>
+    </div>
+    <div id="settings-status" style="margin-top:8px;font-size:0.82rem;color:#6b7280"></div>
   </div>
 
   <!-- ログ -->
@@ -215,14 +244,62 @@ async function runScript() {
   const raw = document.getElementById('script-input').value;
   const lines = raw.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
   if (!lines.length) return;
+
   const status = document.getElementById('script-status');
-  status.textContent = `再生中... (${lines.length}行)`;
-  const res = await fetch('/api/script/run', {
+  const progress = document.getElementById('script-progress');
+  const btn = document.getElementById('script-play-btn');
+  btn.disabled = true;
+
+  // 行リストを表示
+  progress.innerHTML = lines.map((l, i) =>
+    `<div id="script-line-${i}" style="padding:6px 10px;border-radius:6px;font-size:0.85rem;color:#6b7280;background:#0f0f1a;margin-bottom:4px">
+      <span style="color:#4b5563">${i+1}.</span> ${l}
+    </div>`
+  ).join('');
+
+  status.textContent = '';
+
+  // 1行ずつ順番に送信（進捗が見えるように）
+  for (let i = 0; i < lines.length; i++) {
+    const el = document.getElementById('script-line-' + i);
+    el.style.background = '#1e3a5f';
+    el.style.color = '#93c5fd';
+    const res = await fetch('/api/script/say', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: lines[i], wait: true}),
+    }).then(r => r.json());
+    if (res.ok) {
+      el.style.background = '#065f46';
+      el.style.color = '#6ee7b7';
+      el.innerHTML += ` <span style="font-size:0.75rem;color:#34d399">→ ${res.clip}</span>`;
+    } else {
+      el.style.background = '#7f1d1d';
+      el.style.color = '#fca5a5';
+    }
+  }
+
+  status.textContent = `完了！ ${lines.length}行を再生・保存しました`;
+  btn.disabled = false;
+}
+
+async function saveSettings() {
+  const dir = document.getElementById('audio-save-dir').value.trim();
+  const status = document.getElementById('settings-status');
+  const res = await fetch('/api/settings', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({lines, interval: 0.3}),
+    body: JSON.stringify({audio_save_dir: dir}),
   }).then(r => r.json());
-  status.textContent = res.ok ? `完了！ ${res.results.length}行 再生しました` : `エラー: ${res.error}`;
+  status.textContent = res.ok ? '保存しました！' : 'エラー: ' + res.error;
+}
+
+async function loadSettings() {
+  const s = await fetch('/api/settings').then(r => r.json());
+  document.getElementById('audio-save-dir').value = s.audio_save_dir || '';
+  if (s.last_video_path) {
+    document.getElementById('video-path').value = s.last_video_path;
+  }
 }
 
 let videoPolling = null;
@@ -328,6 +405,7 @@ function connectWs() {
 // 初期化
 loadStatus();
 loadGames();
+loadSettings();
 connectWs();
 setInterval(loadStatus, 3000);
 </script>

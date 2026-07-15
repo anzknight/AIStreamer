@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI):
     await _aituber.memory.initialize()
     await _aituber.obs.connect()
     _aituber._running = True
+    _apply_ui_settings()
+    ui = _load_ui_settings()
+    if ui.get("audio_save_dir"):
+        _aituber.tts._audio_save_dir = Path(ui["audio_save_dir"])
     # バックグラウンドでループ開始
     asyncio.create_task(_aituber._run_loops())
     yield
@@ -190,6 +194,57 @@ async def script_run(body: dict):
     return {"ok": True, "results": results}
 
 
+# UI設定（保存場所など）
+_UI_SETTINGS_FILE = Path("config/ui_settings.json")
+
+
+def _load_ui_settings() -> dict:
+    if _UI_SETTINGS_FILE.exists():
+        try:
+            return json.loads(_UI_SETTINGS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _apply_ui_settings():
+    """保存された設定をsettingsに反映"""
+    ui = _load_ui_settings()
+    import config.settings as _s
+    if ui.get("audio_save_dir"):
+        _s.settings.AUDIO_SAVE_DIR = Path(ui["audio_save_dir"])
+
+
+@app.get("/api/settings")
+async def get_settings():
+    ui = _load_ui_settings()
+    return {
+        "audio_save_dir": ui.get("audio_save_dir", str(settings.AUDIO_SAVE_DIR)),
+        "last_video_path": ui.get("last_video_path", ""),
+    }
+
+
+@app.post("/api/settings")
+async def save_settings(body: dict):
+    ui = _load_ui_settings()
+    if "audio_save_dir" in body and body["audio_save_dir"].strip():
+        path = Path(body["audio_save_dir"].strip().strip('"'))
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return {"ok": False, "error": f"フォルダを作成できません: {e}"}
+        ui["audio_save_dir"] = str(path)
+        import config.settings as _s
+        _s.settings.AUDIO_SAVE_DIR = path
+        _aituber.tts._audio_save_dir = path
+        print(f"[設定] 音声保存先: {path}")
+    if "last_video_path" in body:
+        ui["last_video_path"] = body["last_video_path"]
+    _UI_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _UI_SETTINGS_FILE.write_text(json.dumps(ui, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
+
+
 # 動画実況の進行状態
 _video_job = {"running": False, "progress": 0, "total": 0, "done": False, "results": []}
 
@@ -204,6 +259,12 @@ async def video_commentate(body: dict):
         return {"ok": False, "error": f"ファイルが見つかりません: {video_path}"}
     if _video_job["running"]:
         return {"ok": False, "error": "すでに実行中です"}
+
+    # 最後に使ったパスを記憶
+    ui = _load_ui_settings()
+    ui["last_video_path"] = str(video_path)
+    _UI_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _UI_SETTINGS_FILE.write_text(json.dumps(ui, ensure_ascii=False, indent=2), encoding="utf-8")
 
     asyncio.create_task(_run_video_commentary(video_path, interval))
     return {"ok": True, "message": "動画実況を開始しました"}
