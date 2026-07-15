@@ -146,6 +146,29 @@
     <div id="script-status" style="margin-top:8px;font-size:0.82rem;color:#6b7280"></div>
   </div>
 
+  <!-- 動画実況 -->
+  <div class="card">
+    <h2>動画実況 <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（録画済み動画にAIコメントを付ける）</span></h2>
+    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:10px">
+      動画ファイルのフルパスを入力してください（例: C:\Users\Admin\Videos\録画.mp4）<br>
+      完了後、<code style="color:#a78bfa">python mix_video.py "動画パス"</code> で音声合成できます
+    </p>
+    <div class="say-row" style="margin-bottom:10px">
+      <input type="text" id="video-path" placeholder="C:\Users\Admin\Videos\録画.mp4">
+      <select id="video-interval" style="padding:10px;border-radius:8px;background:#0f0f1a;border:1px solid #374151;color:#e0e0e0">
+        <option value="5">5秒ごと</option>
+        <option value="10" selected>10秒ごと</option>
+        <option value="15">15秒ごと</option>
+        <option value="30">30秒ごと</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button class="btn-purple" onclick="startVideo()">🎬 実況開始</button>
+      <button class="btn-gray" onclick="fetch('/api/video/stop',{method:'POST'})">停止</button>
+    </div>
+    <div id="video-status" style="margin-top:10px;font-size:0.85rem;color:#6b7280"></div>
+  </div>
+
   <!-- ログ -->
   <div class="card">
     <h2>ログ <span style="font-weight:normal;color:#4b5563;font-size:0.8rem">（リアルタイム）</span></h2>
@@ -200,6 +223,35 @@ async function runScript() {
     body: JSON.stringify({lines, interval: 0.3}),
   }).then(r => r.json());
   status.textContent = res.ok ? `完了！ ${res.results.length}行 再生しました` : `エラー: ${res.error}`;
+}
+
+let videoPolling = null;
+
+async function startVideo() {
+  const path = document.getElementById('video-path').value.trim();
+  const interval = document.getElementById('video-interval').value;
+  if (!path) return;
+  const status = document.getElementById('video-status');
+  const res = await fetch('/api/video/commentate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({path, interval: parseFloat(interval)}),
+  }).then(r => r.json());
+  if (!res.ok) {
+    status.textContent = 'エラー: ' + res.error;
+    return;
+  }
+  status.textContent = '実況中...';
+  if (videoPolling) clearInterval(videoPolling);
+  videoPolling = setInterval(async () => {
+    const s = await fetch('/api/video/status').then(r => r.json());
+    if (s.done) {
+      status.textContent = `完了！ ${s.results.length}件のコメントを生成しました。mix_video.py で合成してください`;
+      clearInterval(videoPolling);
+    } else if (s.running) {
+      status.textContent = `実況中... ${s.progress}/${s.total} フレーム`;
+    }
+  }, 2000);
 }
 
 async function loadGame() {

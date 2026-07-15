@@ -190,6 +190,104 @@ async def script_run(body: dict):
     return {"ok": True, "results": results}
 
 
+# 動画実況の進行状態
+_video_job = {"running": False, "progress": 0, "total": 0, "done": False, "results": []}
+
+
+@app.post("/api/video/commentate")
+async def video_commentate(body: dict):
+    """録画済み動画を読み込んで、フレームごとにAIが実況コメントを生成"""
+    video_path = Path(body.get("path", "").strip().strip('"'))
+    interval = float(body.get("interval", 10.0))  # 何秒ごとに見るか
+
+    if not video_path.exists():
+        return {"ok": False, "error": f"ファイルが見つかりません: {video_path}"}
+    if _video_job["running"]:
+        return {"ok": False, "error": "すでに実行中です"}
+
+    asyncio.create_task(_run_video_commentary(video_path, interval))
+    return {"ok": True, "message": "動画実況を開始しました"}
+
+
+@app.get("/api/video/status")
+async def video_status():
+    return _video_job
+
+
+async def _run_video_commentary(video_path: Path, interval: float):
+    """動画からフレームを抽出してAIに実況させる"""
+    import subprocess
+    import tempfile
+
+    _video_job.update({"running": True, "progress": 0, "total": 0, "done": False, "results": []})
+
+    # 動画の長さを取得
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(video_path)],
+            capture_output=True, text=True
+        )
+        duration = float(result.stdout.strip())
+    except Exception as e:
+        print(f"[動画実況] ffprobeエラー: {e}（FFmpegをインストールしてください）")
+        _video_job.update({"running": False, "done": True})
+        return
+
+    timestamps = [t for t in range(0, int(duration), int(interval))]
+    _video_job["total"] = len(timestamps)
+    print(f"[動画実況] 開始: {video_path.name} ({duration:.0f}秒, {len(timestamps)}フレーム)")
+
+    # SAVE_AUDIO_FILES を強制ON + タイムラインリセット
+    import config.settings as _s
+    _s.settings.SAVE_AUDIO_FILES = True
+    _s.settings.AUDIO_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+    _aituber.tts._session_start = None
+    _aituber.tts._timeline = []
+    _aituber.tts._clip_counter = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for i, ts in enumerate(timestamps):
+            if not _video_job["running"]:
+                break
+            frame_path = Path(tmpdir) / f"frame_{i}.png"
+            # フレーム抽出
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", str(ts), "-i", str(video_path),
+                 "-vframes", "1", "-q:v", "2", str(frame_path)],
+                capture_output=True
+            )
+            if not frame_path.exists():
+                continue
+
+            image_bytes = frame_path.read_bytes()
+            response = await _aituber.ai.commentary(image_bytes)
+            if response:
+                mins, secs = divmod(ts, 60)
+                print(f"[動画実況 {mins:02d}:{secs:02d}] {response}")
+                # タイムラインのoffsetを動画時間に合わせる
+                await _aituber.tts.speak(response, wait=True)
+                # 保存されたclipのoffsetを動画のtsに上書き
+                if _aituber.tts._timeline:
+                    _aituber.tts._timeline[-1]["offset_sec"] = float(ts)
+                    timeline_path = _s.settings.AUDIO_SAVE_DIR / "timeline.json"
+                    timeline_path.write_text(
+                        json.dumps(_aituber.tts._timeline, ensure_ascii=False, indent=2),
+                        encoding="utf-8"
+                    )
+                _video_job["results"].append({"time": ts, "text": response})
+            _video_job["progress"] = i + 1
+
+    _video_job.update({"running": False, "done": True})
+    print(f"[動画実況] 完了！ python mix_video.py \"{video_path}\" で合成できます")
+
+
+@app.post("/api/video/stop")
+async def video_stop():
+    _video_job["running"] = False
+    return {"ok": True}
+
+
 @app.get("/api/games")
 async def list_games():
     games_dir = settings.GAMES_DIR
