@@ -89,7 +89,10 @@ class OBSController:
             self._ws.start_stream()
             print("[OBS] Streaming started")
         except Exception as e:
-            print(f"[OBS] start_streaming error: {e}")
+            if "501" in str(e):
+                print("[OBS] すでに配信中です")
+            else:
+                print(f"[OBS] start_streaming error: {e}")
 
     async def stop_streaming(self):
         if not self.connected or not self._ws:
@@ -98,7 +101,10 @@ class OBSController:
             self._ws.stop_stream()
             print("[OBS] Streaming stopped")
         except Exception as e:
-            print(f"[OBS] stop_streaming error: {e}")
+            if "501" in str(e):
+                print("[OBS] 配信していないため停止をスキップしました")
+            else:
+                print(f"[OBS] stop_streaming error: {e}")
 
     async def switch_scene(self, scene_name: str):
         if not self.connected or not self._ws:
