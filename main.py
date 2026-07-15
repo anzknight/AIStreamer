@@ -105,8 +105,8 @@ class AITuber:
         self._running = True
         await self._run_loops()
 
-    async def _run_loops(self):
-        readers = create_chat_readers()
+    async def _run_loops(self, use_console: bool = True):
+        readers = create_chat_readers(console_fallback=use_console)
         # YouTubeリーダーにOBSコントローラーを渡して自動ID取得を有効化
         from modules.chat_reader import get_youtube_reader
         yt_reader = get_youtube_reader()
@@ -114,7 +114,8 @@ class AITuber:
             yt_reader.set_obs(self.obs)
             yt_reader.set_on_stream_end(self._on_stream_end)
         tasks = [asyncio.create_task(r.read(self._on_chat_message)) for r in readers]
-        tasks.append(asyncio.create_task(self._command_loop()))
+        if use_console:
+            tasks.append(asyncio.create_task(self._command_loop()))
 
         if settings.AUTO_TALK_ENABLED:
             tasks.append(asyncio.create_task(self._auto_talk_loop()))

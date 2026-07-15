@@ -49,7 +49,7 @@ async def _init_aituber():
     await _aituber.memory.initialize()
     await _aituber.obs.connect()
     _aituber._running = True
-    asyncio.ensure_future(_aituber._run_loops())
+    asyncio.ensure_future(_aituber._run_loops(use_console=False))
 
 
 # ---- GUI ----

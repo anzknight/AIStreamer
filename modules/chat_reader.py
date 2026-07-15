@@ -156,7 +156,7 @@ class ConsoleChatReader:
 _youtube_reader: YouTubeChatReader | None = None
 
 
-def create_chat_readers() -> list:
+def create_chat_readers(console_fallback: bool = True) -> list:
     global _youtube_reader
     readers = []
 
@@ -167,7 +167,7 @@ def create_chat_readers() -> list:
     if settings.TWITCH_ENABLED and settings.TWITCH_TOKEN and settings.TWITCH_CHANNEL:
         readers.append(TwitchChatReader(settings.TWITCH_TOKEN, settings.TWITCH_CHANNEL))
 
-    if not readers:
+    if not readers and console_fallback:
         readers.append(ConsoleChatReader())
 
     return readers

@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
     if ui.get("audio_save_dir"):
         _aituber.tts._audio_save_dir = Path(ui["audio_save_dir"])
     # バックグラウンドでループ開始
-    asyncio.create_task(_aituber._run_loops())
+    asyncio.create_task(_aituber._run_loops(use_console=False))
     yield
     await _aituber.stop()
 
