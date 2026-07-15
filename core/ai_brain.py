@@ -174,6 +174,8 @@ class AIBrain:
         return response_text
 
     def _run_vision(self, messages: list) -> str:
+        import re
+        import time as _time
         for attempt in range(3):
             try:
                 response = self.client.chat.completions.create(
@@ -183,9 +185,23 @@ class AIBrain:
                 )
                 return response.choices[0].message.content or ""
             except Exception as e:
+                err = str(e)
+                # レート制限(429): "try again in Xm Y.Zs" を読み取って自動待機
+                if "rate_limit_exceeded" in err or "429" in err:
+                    wait_secs = 60.0
+                    m = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", err)
+                    if m:
+                        mins = int(m.group(1) or 0)
+                        secs = float(m.group(2))
+                        wait_secs = mins * 60 + secs + 5
+                    if wait_secs > 900:
+                        print(f"[AI] 1日のトークン上限に達しました（{wait_secs/60:.0f}分後にリセット）")
+                        return ""
+                    print(f"[AI] レート制限中... {wait_secs:.0f}秒待って再開します")
+                    _time.sleep(wait_secs)
+                    continue
                 if attempt == 2:
                     print(f"[AI] 画面実況に失敗しました: {e}")
                     return ""
-                import time as _time
                 _time.sleep(1.5 * (attempt + 1))
         return ""

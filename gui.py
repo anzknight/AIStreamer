@@ -370,7 +370,7 @@ class App(tk.Tk):
                     frame = Path(tmpdir) / f"f_{i}.png"
                     subprocess.run(
                         ["ffmpeg", "-y", "-ss", str(ts), "-i", str(path),
-                         "-vframes", "1", "-q:v", "2", str(frame)],
+                         "-vframes", "1", "-vf", "scale=640:-1", "-q:v", "5", str(frame)],
                         capture_output=True)
                     if not frame.exists():
                         continue

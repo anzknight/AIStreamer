@@ -315,7 +315,7 @@ async def _run_video_commentary(video_path: Path, interval: float):
             # フレーム抽出
             subprocess.run(
                 ["ffmpeg", "-y", "-ss", str(ts), "-i", str(video_path),
-                 "-vframes", "1", "-q:v", "2", str(frame_path)],
+                 "-vframes", "1", "-vf", "scale=640:-1", "-q:v", "5", str(frame_path)],
                 capture_output=True
             )
             if not frame_path.exists():
