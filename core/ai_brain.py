@@ -1,0 +1,207 @@
+import json
+import asyncio
+from groq import Groq
+from config.settings import settings
+from core.memory import MemoryManager
+
+
+MODE_INSTRUCTIONS = {
+    "chat": (
+        "【モード: 雑談】\n"
+        "視聴者と自由に雑談する場です。\n"
+        "- 視聴者のコメントに自然に返答する\n"
+        "- 話題は自由（ゲーム・アニメ・日常など）\n"
+        "- ゲームプレイやゲーム制作の話題は軽く流す"
+    ),
+    "game": (
+        "【モード: ゲームプレイ実況】\n"
+        "ゲームをプレイしながら実況している場です。\n"
+        "- 今やっているゲームの話題を中心にする\n"
+        "- プレイの感想・攻略・リアクションを話す\n"
+        "- 関係のない長話はしない\n"
+        "- ゲームに集中した短めの返答を心がける"
+    ),
+    "gamedev": (
+        "【モード: ゲーム制作】\n"
+        "ゲームを制作している作業配信の場です。\n"
+        "- 制作中のゲームについて話す\n"
+        "- プログラミング・デザイン・アイデアの話題が中心\n"
+        "- 視聴者の制作に関する質問や提案には積極的に反応する\n"
+        "- 雑談やゲームプレイの話題は軽く受け流す"
+    ),
+    "video": (
+        "【モード: 動画実況】\n"
+        "ゆっくり実況・VOICEROID実況スタイルの動画を作っています。\n"
+        "- 画面の状況を丁寧に説明・解説する\n"
+        "- 感情豊かに、驚き・笑い・ツッコミを自然に入れる\n"
+        "- 視聴者に伝わるよう状況を具体的に言葉にする\n"
+        "- テンポよく、内容のしっかりしたコメントをする\n"
+        "- 100文字程度まで使ってよい（通常より長めでOK）"
+    ),
+}
+
+
+def _load_knowledge() -> str:
+    """現在のゲーム知識 + 共通knowledge.md を読み込んで返す"""
+    parts = []
+    try:
+        # 現在選択中のゲームファイル
+        current = settings.GAMES_DIR / "_current.txt"
+        if current.exists():
+            game_name = current.read_text(encoding="utf-8").strip()
+            game_file = settings.GAMES_DIR / f"{game_name}.md"
+            if game_file.exists():
+                parts.append(game_file.read_text(encoding="utf-8").strip())
+        # 共通knowledge.md
+        if settings.KNOWLEDGE_FILE.exists():
+            text = settings.KNOWLEDGE_FILE.read_text(encoding="utf-8").strip()
+            if text and "（ここに書く）" not in text:
+                parts.append(text)
+    except Exception:
+        pass
+    return "\n\n".join(parts)
+
+
+def _build_system_prompt(character: dict, mode: str, memory_context: str = "") -> str:
+    catchphrases = "、".join(character.get("catchphrases", []))
+    mode_instruction = MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS["chat"])
+    knowledge = _load_knowledge()
+
+    prompt = f"""あなたはAIVTuberの「{character['name']}（{character['name_jp']}）」です。
+
+【キャラクター設定】
+{character['personality']}
+
+【話し方】
+{character['speech_style']}
+
+【口癖・決め台詞】
+{catchphrases}
+
+{mode_instruction}
+
+【重要ルール】
+- 返答は日本語で{"100文字程度" if mode == "video" else "60文字以内"}に収めてください
+- 常にキャラクターを保ってください
+- モードに合わない話題は短く流してください
+- 自分から無関係な話題を振らないでください"""
+
+    if knowledge:
+        prompt += f"\n\n【事前知識】\n{knowledge}"
+
+    if memory_context:
+        prompt += f"\n\n【記憶】\n{memory_context}"
+
+    return prompt
+
+
+class AIBrain:
+    def __init__(self, memory: MemoryManager, character: dict):
+        self.client = Groq(api_key=settings.GROQ_API_KEY)
+        self.memory = memory
+        self.character = character
+
+    async def respond(
+        self,
+        user_input: str,
+        mode: str = "chat",
+        screen_image: bytes | None = None,
+        username: str | None = None,
+    ) -> str:
+        history = await self.memory.get_recent_messages()
+
+        memory_context = ""
+        if username:
+            viewer_data = await self.memory.recall_category("viewer")
+            if viewer_data:
+                memory_context = f"視聴者情報: {json.dumps(viewer_data, ensure_ascii=False)}"
+
+        system = _build_system_prompt(self.character, mode, memory_context)
+
+        user_text = f"[{username}]: {user_input}" if username else user_input
+        messages = [{"role": "system", "content": system}] + history + [{"role": "user", "content": user_text}]
+
+        response_text = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: self._run_with_tools(messages)
+        )
+
+        await self.memory.add_message("user", user_text)
+        await self.memory.add_message("assistant", response_text)
+
+        return response_text
+
+    def _run_with_tools(self, messages: list) -> str:
+        for attempt in range(3):
+            try:
+                response = self.client.chat.completions.create(
+                    model=settings.AI_MODEL,
+                    messages=messages,
+                    max_tokens=150,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                if attempt == 2:
+                    print(f"[AI] 返答取得に失敗しました: {e}")
+                    return ""
+                import time as _time
+                _time.sleep(1.5 * (attempt + 1))
+        return ""
+
+    async def commentary(self, screen_image: bytes, game_context: str = "") -> str:
+        """画面画像を実際にAIに見せて実況コメントを生成する"""
+        import base64
+        system = _build_system_prompt(self.character, settings.MODE)
+        image_b64 = base64.b64encode(screen_image).decode("utf-8")
+        prompt = game_context or "この画面を見て、今起きていることを実況してください。"
+
+        messages = [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            },
+        ]
+
+        response_text = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: self._run_vision(messages)
+        )
+        return response_text
+
+    def _run_vision(self, messages: list) -> str:
+        import re
+        import time as _time
+        for attempt in range(3):
+            try:
+                response = self.client.chat.completions.create(
+                    model=settings.VISION_MODEL,
+                    messages=messages,
+                    max_tokens=200,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                err = str(e)
+                # レート制限(429): "try again in Xm Y.Zs" を読み取って自動待機
+                if "rate_limit_exceeded" in err or "429" in err:
+                    wait_secs = 60.0
+                    m = re.search(r"try again in (?:(\d+)m)?([\d.]+)s", err)
+                    if m:
+                        mins = int(m.group(1) or 0)
+                        secs = float(m.group(2))
+                        wait_secs = mins * 60 + secs + 5
+                    if wait_secs > 900:
+                        print(f"[AI] 1日のトークン上限に達しました（{wait_secs/60:.0f}分後にリセット）")
+                        return ""
+                    print(f"[AI] レート制限中... {wait_secs:.0f}秒待って再開します")
+                    _time.sleep(wait_secs)
+                    continue
+                if attempt == 2:
+                    print(f"[AI] 画面実況に失敗しました: {e}")
+                    return ""
+                _time.sleep(1.5 * (attempt + 1))
+        return ""
