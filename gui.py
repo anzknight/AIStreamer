@@ -346,7 +346,7 @@ class App(tk.Tk):
                 result = subprocess.run(
                     ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
                      "-of", "csv=p=0", str(path)],
-                    capture_output=True, text=True)
+                    capture_output=True, text=True, encoding="utf-8", errors="replace")
                 duration = float(result.stdout.strip())
             except Exception as e:
                 print(f"[動画実況] FFmpegが必要です: {e}")
@@ -412,7 +412,7 @@ class App(tk.Tk):
             import subprocess
             result = subprocess.run(
                 ["python", "mix_video.py", path, "--output", out],
-                capture_output=True, text=True)
+                capture_output=True, text=True, encoding="utf-8", errors="replace")
             ok = result.returncode == 0
             self.after(0, lambda: self.video_status.config(
                 text=f"完成！ → {out}" if ok else "合成エラー（ログ参照）"))

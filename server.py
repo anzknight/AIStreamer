@@ -287,7 +287,7 @@ async def _run_video_commentary(video_path: Path, interval: float):
         result = subprocess.run(
             ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
              "-of", "csv=p=0", str(video_path)],
-            capture_output=True, text=True
+            capture_output=True, text=True, encoding="utf-8", errors="replace"
         )
         duration = float(result.stdout.strip())
     except Exception as e:
